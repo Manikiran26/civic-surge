@@ -1,0 +1,50 @@
+@import "tailwindcss";
+@import "maplibre-gl/dist/maplibre-gl.css";
+@import "leaflet/dist/leaflet.css";
+@import "leaflet/dist/leaflet.css";
+:root {
+  color-scheme: dark;
+  font-family: "Space Grotesk", sans-serif;
+  --font-display: "Fraunces", "Space Grotesk", sans-serif;
+  --text-primary: #f3f6ff;
+  --text-muted: #94a6c5;
+  --bg-base: #05070c;
+  --bg-surface: rgba(9, 16, 26, 0.9);
+  --shadow: 0 28px 60px rgba(0, 0, 0, 0.45);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(89, 242, 255, 0.12), transparent 35%),
+    radial-gradient(circle at 80% 0%, rgba(37, 99, 235, 0.15), transparent 40%),
+    radial-gradient(circle at 20% 80%, rgba(14, 165, 233, 0.1), transparent 45%),
+    linear-gradient(180deg, #06080d 0%, #04060b 60%, #02040a 100%);
+  color: var(--text-primary);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
