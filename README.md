@@ -63,3 +63,4 @@ npm run build
 - The seed catalogue uses verified project identities only. Missing source fields stay `unknown`.
 - Coordinates are representative anchors for named stations, campuses, facilities, or corridor midpoints. They are not survey-grade parcel coordinates.
 - The backend runs with an in-memory fallback when `DATABASE_URL` is not configured; production mode should use Postgres/PostGIS.
+# astra
