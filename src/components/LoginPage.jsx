@@ -1,80 +1,143 @@
-import { useState } from "react";
-import { Lock, Mail, ArrowLeft, Zap } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Apple, Lock, Mail, MapPin, Shield, Sparkles } from "lucide-react";
 
-export default function LoginPage({ onLogin, onBack }) {
+export default function LoginPage({ onLogin }) {
+  const cardRef = useRef(null);
+  const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (email && password) {
-      onLogin();
-    }
+  useEffect(() => {
+    const card = cardRef.current;
+    if (!card) return;
+    const handleMove = (event) => {
+      const rect = card.getBoundingClientRect();
+      const x = (event.clientX - rect.left) / rect.width;
+      const y = (event.clientY - rect.top) / rect.height;
+      card.style.setProperty("--x", x.toFixed(2));
+      card.style.setProperty("--y", y.toFixed(2));
+    };
+    card.addEventListener("mousemove", handleMove);
+    return () => card.removeEventListener("mousemove", handleMove);
+  }, []);
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    if (loading) return;
+    setLoading(true);
+    setTimeout(() => {
+      setLoading(false);
+      onLogin?.(email.trim() || "CivicSurge User", email.trim() || "user@civicsurge.ai");
+    }, 1200);
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center p-6 text-white font-sans relative overflow-hidden">
-      <div className="absolute top-[-20%] right-[-10%] w-[60%] h-[60%] bg-cyan-500/10 blur-[120px] pointer-events-none rounded-full" />
-      <div className="absolute bottom-[-20%] left-[-10%] w-[60%] h-[60%] bg-blue-500/10 blur-[120px] pointer-events-none rounded-full" />
-
-      <div className="w-full max-w-sm relative z-10">
-        <button 
-          onClick={onBack}
-          className="mb-8 text-gray-400 hover:text-white transition-colors flex items-center gap-2 text-[10px] uppercase font-black tracking-widest"
-        >
-          <ArrowLeft size={14} /> Return
-        </button>
-
-        <div className="bg-gray-900/50 backdrop-blur-xl border border-white/10 rounded-[2rem] p-8 shadow-2xl">
-          <div className="mb-8 flex items-center gap-3">
-             <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
-               <Lock size={20} />
-             </div>
-             <div>
-                <h2 className="text-xl font-black italic uppercase tracking-wider text-white">System Login</h2>
-                <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">Authorized Access Only</p>
-             </div>
+    <div className="auth-shell">
+      <div className="auth-left">
+        <div className="auth-map">
+          <div className="auth-map__overlay" />
+          <div className="auth-map__markers">
+            <span className="pin pin--a" />
+            <span className="pin pin--b" />
+            <span className="pin pin--c" />
+            <span className="route route--one" />
+            <span className="route route--two" />
           </div>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Grid ID (Email)</label>
-              <div className="relative">
-                <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
-                <input 
-                  type="email" 
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-black/50 border border-white/10 focus:border-cyan-500/50 rounded-xl py-3 pl-12 pr-4 text-sm text-white placeholder:text-gray-700 outline-none transition-colors"
-                  placeholder="citizen@network.org"
-                />
+          <div className="auth-orbs">
+            <span className="orb orb--one" />
+            <span className="orb orb--two" />
+            <span className="orb orb--three" />
+          </div>
+        </div>
+        <div className="auth-left__content">
+          <div className="auth-logo">
+            <span className="brand__mark" />
+            <div>
+              <div className="auth-logo__name">CivicSurge</div>
+              <div className="auth-logo__tag">Hyper-local intelligence platform</div>
+            </div>
+          </div>
+          <div className="auth-value-grid">
+            <div className="auth-value">
+              <MapPin size={18} />
+              <div>
+                <strong>Real-time Hyper-Local Targeting</strong>
+                <span>Deliver precision alerts by zone, time, and intent.</span>
               </div>
             </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest pl-1">Passcode</label>
-              <div className="relative">
-                <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
-                <input 
-                  type="password" 
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-black/50 border border-white/10 focus:border-cyan-500/50 rounded-xl py-3 pl-12 pr-4 text-sm text-white placeholder:text-gray-700 outline-none transition-colors"
-                  placeholder="••••••••"
-                />
+            <div className="auth-value">
+              <Shield size={18} />
+              <div>
+                <strong>Track Government Projects Transparently</strong>
+                <span>Verified updates, citizen feedback, and compliance trails.</span>
               </div>
             </div>
+            <div className="auth-value">
+              <Sparkles size={18} />
+              <div>
+                <strong>Data-driven Civic Insights</strong>
+                <span>Operational dashboards with impact and engagement signals.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-            <button 
-              type="submit"
-              className="w-full py-4 mt-6 bg-cyan-500 hover:bg-cyan-400 text-black rounded-xl font-black uppercase tracking-widest text-xs transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] active:scale-[0.98] flex items-center justify-center gap-2"
-            >
-              <Zap size={16} className="fill-black" />
-              <span>Initialize Session</span>
+      <div className="auth-right">
+        <div className="login-glass" ref={cardRef}>
+          <div className="login-glass__glow" />
+          <div className="login-glass__badge">
+            <Lock size={14} />
+            Secure Login
+          </div>
+          <h2>Welcome Back</h2>
+          <p>Sign in to access your command center.</p>
+          <form className="login-fields" onSubmit={handleSubmit}>
+            <label className="float-field">
+              <input
+                type="email"
+                placeholder=" "
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+              />
+              <span>Email</span>
+              <Mail size={16} />
+            </label>
+            <label className="float-field">
+              <input
+                type="password"
+                placeholder=" "
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+              <span>Password</span>
+              <Lock size={16} />
+            </label>
+            <div className="login-row">
+              <label className="checkbox-row">
+                <input type="checkbox" defaultChecked />
+                <span>Remember me</span>
+              </label>
+              <button type="button" className="link-button">
+                Forgot password?
+              </button>
+            </div>
+            <button type="submit" className="primary-button login-cta" disabled={loading}>
+              {loading ? <span className="loader" /> : "Login"}
             </button>
           </form>
+          <div className="social-row">
+            <button type="button" className="social-button">
+              <span className="google-mark">G</span>
+              Google
+            </button>
+            <button type="button" className="social-button">
+              <Apple size={16} />
+              Apple
+            </button>
+          </div>
         </div>
       </div>
     </div>

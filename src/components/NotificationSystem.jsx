@@ -4,11 +4,32 @@ import { Bell, MessageCircle } from "lucide-react";
 export function NotificationSystem({ notifications = [] }) {
   if (!notifications.length) return null;
   return (
-    <div className="fixed top-6 right-6 z-[9999] flex flex-col gap-3">
+    <div className="notification-stack fixed right-6 z-[9999] flex flex-col gap-3">
       {notifications.map((n, i) => (
-        <div key={i} className="bg-cyan-900/90 border border-cyan-400/30 text-white px-6 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-fadeIn">
-          <Bell size={18} className="text-cyan-400" />
-          <span className="text-xs font-mono">{n.message}</span>
+        <div key={i} className={`notification-card ${n.type || "geo"}`}>
+          <Bell size={18} className="notification-icon" />
+          <div>
+            {n.title && <div className="notification-title">{n.title}</div>}
+            <div className="notification-message">{n.message}</div>
+            {n.type === "geo-detail" && (
+              <div className="notification-sub">
+                <span>{n.locationLabel}</span>
+                <span>{n.status}</span>
+                <span>{n.distance}</span>
+              </div>
+            )}
+            {n.type === "geo-detail" && (
+              <div className="notification-impact">
+                {Number.isFinite(n.completion) ? (
+                  <span>Work {n.completion}% complete</span>
+                ) : (
+                  <span>Work status: {n.status}</span>
+                )}
+                {n.impact && <span>Impact: {n.impact}</span>}
+                {n.citizens && <span>Beneficiaries: {n.citizens}</span>}
+              </div>
+            )}
+          </div>
         </div>
       ))}
     </div>

@@ -1,7 +1,42 @@
-import { Bookmark, MapPin, X } from "lucide-react";
+import { useState } from "react";
+import { Bookmark, MapPin, X, MessageSquare, ShieldAlert, Star } from "lucide-react";
+import { getCivicExplainer } from "../utils/projectInsights";
+import ReportModal from "./ReportModal";
 
 export default function ProjectInfoPanel({ project, onClose, onOpen3D, onToggleBookmark, isBookmarked }) {
   if (!project) return null;
+  const [language, setLanguage] = useState("en");
+  const [modalType, setModalType] = useState(null);
+  const intelligence = project.intelligence || {};
+  const impactScores = project.impactScores || {};
+  const regional = getRegionalLanguage(project);
+  const showRegional = regional.code !== "hi";
+
+  function getRegionalLanguage(current) {
+    const city = String(current?.city || "").toLowerCase();
+    const state = String(current?.state || "").toLowerCase();
+    if (city.includes("bengaluru") || city.includes("bangalore") || state.includes("karnataka")) {
+      return { code: "kn", label: "ಕನ್ನಡ" };
+    }
+    if (
+      city.includes("hyderabad") ||
+      city.includes("srikakulam") ||
+      state.includes("telangana") ||
+      state.includes("andhra pradesh")
+    ) {
+      return { code: "te", label: "తెలుగు" };
+    }
+    if (state.includes("tamil nadu") || city.includes("chennai") || city.includes("coimbatore") || city.includes("madurai")) {
+      return { code: "ta", label: "தமிழ்" };
+    }
+    if (city.includes("mumbai") || state.includes("maharashtra")) {
+      return { code: "mr", label: "मराठी" };
+    }
+    if (city.includes("kolkata") || state.includes("west bengal")) {
+      return { code: "bn", label: "বাংলা" };
+    }
+    return { code: "hi", label: "हिंदी" };
+  }
 
   return (
     <aside className="project-panel">
@@ -72,6 +107,124 @@ export default function ProjectInfoPanel({ project, onClose, onOpen3D, onToggleB
         <p>{project.description}</p>
       </div>
 
+      <div className="project-panel__description">
+        <span>AI Civic Explainer</span>
+        <div className="project-panel__lang">
+          <button
+            type="button"
+            className={language === "en" ? "pill is-active" : "pill"}
+            onClick={() => setLanguage("en")}
+          >
+            English
+          </button>
+          <button
+            type="button"
+            className={language === "hi" ? "pill is-active" : "pill"}
+            onClick={() => setLanguage("hi")}
+          >
+            हिंदी
+          </button>
+          {showRegional && (
+            <button
+              type="button"
+              className={language === regional.code ? "pill is-active" : "pill"}
+              onClick={() => setLanguage(regional.code)}
+            >
+              {regional.label}
+            </button>
+          )}
+        </div>
+        <p>{getCivicExplainer(project, language)}</p>
+      </div>
+
+      <div className="project-panel__description">
+        <span>Real-Time Intelligence</span>
+        <div className="intel-grid">
+          <div>
+            <span>Live progress</span>
+            <strong>{intelligence.liveProgress ?? project.completionPercent}%</strong>
+          </div>
+          <div>
+            <span>Timeline status</span>
+            <strong className={`intel-${intelligence.timelineStatus || "on-track"}`}>
+              {intelligence.timelineStatus || "on-track"}
+            </strong>
+          </div>
+          <div>
+            <span>Deviation</span>
+            <strong>
+              {typeof intelligence.deviation === "number"
+                ? `${intelligence.deviation > 0 ? "+" : ""}${intelligence.deviation}%`
+                : "0%"}
+            </strong>
+          </div>
+          <div>
+            <span>Budget vs actual</span>
+            <strong>
+              {Number.isFinite(intelligence.budgetPlanned)
+                ? `₹${intelligence.budgetPlanned.toLocaleString("en-IN")} cr`
+                : project.budgetDisplay}{" "}
+              /{" "}
+              {Number.isFinite(intelligence.budgetActual)
+                ? `₹${intelligence.budgetActual.toLocaleString("en-IN")} cr`
+                : "₹0 cr"}
+            </strong>
+          </div>
+          <div>
+            <span>Contractor</span>
+            <strong>{intelligence.contractor || "TBD"}</strong>
+          </div>
+          <div>
+            <span>Agency</span>
+            <strong>{intelligence.agency || "TBD"}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div className="project-panel__description">
+        <span>Impact Score Dashboard</span>
+        <div className="impact-score-grid">
+          <div>
+            <span>Economic</span>
+            <strong>{impactScores.economic ?? 0}</strong>
+          </div>
+          <div>
+            <span>Traffic</span>
+            <strong>{impactScores.traffic ?? 0}</strong>
+          </div>
+          <div>
+            <span>Environment</span>
+            <strong>{impactScores.environment ?? 0}</strong>
+          </div>
+          <div>
+            <span>Jobs created</span>
+            <strong>{impactScores.jobsCreated ?? 0}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div className="project-panel__description">
+        <span>Citizen Feedback Loop</span>
+        <div className="feedback-actions">
+          <button type="button" className="ghost-button" onClick={() => setModalType("report")}>
+            <ShieldAlert size={14} />
+            Report issue
+          </button>
+          <button type="button" className="ghost-button" onClick={() => setModalType("progress")}>
+            <MessageSquare size={14} />
+            Progress feedback
+          </button>
+          <button type="button" className="ghost-button" onClick={() => setModalType("rate")}>
+            <Star size={14} />
+            Rate project
+          </button>
+          <button type="button" className="ghost-button" onClick={() => setModalType("feedback")}>
+            <MessageSquare size={14} />
+            General feedback
+          </button>
+        </div>
+      </div>
+
       <div className="project-panel__footer">
         <button type="button" className="primary-button" onClick={onOpen3D}>
           3D View
@@ -80,6 +233,13 @@ export default function ProjectInfoPanel({ project, onClose, onOpen3D, onToggleB
           Close
         </button>
       </div>
+
+      <ReportModal
+        isOpen={Boolean(modalType)}
+        onClose={() => setModalType(null)}
+        type={modalType || "report"}
+        project={project}
+      />
     </aside>
   );
 }

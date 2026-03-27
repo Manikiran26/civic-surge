@@ -7,10 +7,12 @@ import DashboardPanel from "./components/DashboardPanel";
 import ProjectInfoPanel from "./components/ProjectInfoPanel";
 import Project3DModal from "./components/Project3DModal";
 import { NotificationSystem } from "./components/NotificationSystem";
+import LoginPage from "./components/LoginPage";
 import { getProjectById, getProjects, submitAdminProject } from "./services/api";
 import useUserLocation from "./hooks/useUserLocation";
 import { enrichProject, enrichProjects } from "./utils/projectEnrichment";
 import { formatDistanceKm, haversineKm } from "./utils/geo";
+import { getImpactScores, getProjectIntelligence, getProjectInterestTags } from "./utils/projectInsights";
 
 const MAP_MODES = [
   { id: "satellite", label: "Satellite" },
@@ -42,14 +44,27 @@ export default function App() {
   const [filterPanelOpen, setFilterPanelOpen] = useState(true);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [dashboardSearch, setDashboardSearch] = useState("");
+  const [dashboardSection, setDashboardSection] = useState(null);
+  const [locationQuery, setLocationQuery] = useState("");
+  const [locationResult, setLocationResult] = useState(null);
+  const [locationSearchError, setLocationSearchError] = useState("");
+  const [locationSearching, setLocationSearching] = useState(false);
+  const [mapCenter, setMapCenter] = useState(null);
+  const [mapZoom, setMapZoom] = useState(null);
   const [bookmarkedIds, setBookmarkedIds] = useState([]);
   const [recentIds, setRecentIds] = useState([]);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [notifications, setNotifications] = useState([]);
+  const [announcementFeed, setAnnouncementFeed] = useState([]);
+  const [geoPreferences, setGeoPreferences] = useState({
+    speedMode: "walking",
+    timeMode: "any",
+    interestMode: "all",
+  });
   const [user, setUser] = useState({
-    isLoggedIn: true,
-    name: "Aarav Mehta",
-    role: "admin",
+    isLoggedIn: false,
+    name: "Guest",
+    role: "viewer",
   });
   const [adminState, setAdminState] = useState({ status: "idle", message: "" });
   const [show3D, setShow3D] = useState(false);
@@ -65,25 +80,61 @@ export default function App() {
     isTracking,
   } = useUserLocation(true);
 
+  const enrichedProjects = useMemo(() => {
+    return projects.map((project) => ({
+      ...project,
+      intelligence: getProjectIntelligence(project),
+      impactScores: getImpactScores(project),
+      interestTags: getProjectInterestTags(project),
+    }));
+  }, [projects]);
+
   useEffect(() => {
     if (notificationsEnabled) return;
     setNotifications([]);
   }, [notificationsEnabled]);
 
   useEffect(() => {
-    if (!notificationsEnabled || !location || projects.length === 0) return;
+    if (!user.isLoggedIn || !notificationsEnabled) return;
+    const id = `refresh-${Date.now()}`;
+    const notification = {
+      id,
+      type: "admin",
+      message: "Session started. Geo-fence alerts are active.",
+    };
+    setNotifications((current) => [...current, notification].slice(-4));
+    const timeout = window.setTimeout(() => {
+      setNotifications((current) => current.filter((item) => item.id !== id));
+    }, 6000);
+    return () => window.clearTimeout(timeout);
+  }, [user.isLoggedIn, notificationsEnabled]);
 
-    const constructionRadiusKm = 0.6;
-    const hospitalRadiusKm = 1.2;
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(window.localStorage.getItem("civic:admin:announcements") || "[]");
+      setAnnouncementFeed(Array.isArray(stored) ? stored : []);
+    } catch {
+      setAnnouncementFeed([]);
+    }
+  }, []);
 
-    const constructionCandidates = projects.filter(
+  useEffect(() => {
+    if (!notificationsEnabled || !location || enrichedProjects.length === 0) return;
+    if (!isTimeRelevant(geoPreferences.timeMode)) return;
+
+    const speedFactor = speedMultiplier(geoPreferences.speedMode);
+    const constructionRadiusKm = 0.6 * speedFactor;
+    const hospitalRadiusKm = 1.2 * speedFactor;
+
+    const constructionCandidates = enrichedProjects.filter(
       (project) =>
         Number.isFinite(project.latitude) &&
         Number.isFinite(project.longitude) &&
-        (project.status === "ongoing" || project.status === "delayed")
+        (project.status === "ongoing" || project.status === "delayed") &&
+        interestMatches(project)
     );
 
-    const hospitalCandidates = projects.filter(
+    const hospitalCandidates = enrichedProjects.filter(
       (project) =>
         Number.isFinite(project.latitude) &&
         Number.isFinite(project.longitude) &&
@@ -130,7 +181,7 @@ export default function App() {
       nearestHospital.distance
     )}).`;
 
-    const notification = { id: storageKey, message };
+    const notification = { id: storageKey, message, type: "geo" };
     setNotifications((current) => [...current, notification].slice(-3));
 
     const timer = window.setTimeout(() => {
@@ -138,7 +189,108 @@ export default function App() {
     }, 8000);
 
     return () => window.clearTimeout(timer);
-  }, [location, projects, notificationsEnabled]);
+  }, [location, enrichedProjects, notificationsEnabled, geoPreferences]);
+
+  useEffect(() => {
+    if (!notificationsEnabled || !location || enrichedProjects.length === 0) return;
+    if (!isTimeRelevant(geoPreferences.timeMode)) return;
+
+    const speedFactor = speedMultiplier(geoPreferences.speedMode);
+    const alertRadiusKm = 0.9 * speedFactor;
+
+    const hazardProjects = enrichedProjects.filter(
+      (project) =>
+        Number.isFinite(project.latitude) &&
+        Number.isFinite(project.longitude) &&
+        (project.status === "ongoing" || project.status === "delayed") &&
+        interestMatches(project)
+    );
+
+    for (const project of hazardProjects) {
+      const distanceKm = haversineKm(
+        location.lat,
+        location.lng,
+        project.latitude,
+        project.longitude
+      );
+      if (distanceKm > alertRadiusKm) continue;
+      const storageKey = `civic:safety:${project.id}`;
+      if (window.sessionStorage.getItem(storageKey)) continue;
+      window.sessionStorage.setItem(storageKey, "seen");
+      const message = `Safety alert near ${project.name}: expect construction activity and diversions.`;
+      const notification = { id: storageKey, message, type: "safety" };
+      setNotifications((current) => [...current, notification].slice(-4));
+      const timer = window.setTimeout(() => {
+        setNotifications((current) => current.filter((item) => item.id !== storageKey));
+      }, 10000);
+      return () => window.clearTimeout(timer);
+    }
+  }, [location, enrichedProjects, notificationsEnabled, geoPreferences]);
+
+  useEffect(() => {
+    if (!notificationsEnabled || !location || enrichedProjects.length === 0) return;
+    const targetId = "bennett-university-mobility-hub";
+    const project = enrichedProjects.find((item) => item.id === targetId);
+    if (!project || !Number.isFinite(project.latitude) || !Number.isFinite(project.longitude)) return;
+    const distanceKm = haversineKm(
+      location.lat,
+      location.lng,
+      project.latitude,
+      project.longitude
+    );
+    if (distanceKm > 3) return;
+    const storageKey = `civic:geo:${targetId}`;
+    if (window.sessionStorage.getItem(storageKey)) return;
+    window.sessionStorage.setItem(storageKey, "seen");
+    const notification = {
+      id: storageKey,
+      type: "geo-detail",
+      title: "Geo-fence alert",
+      message: project.name,
+      locationLabel: project.locationLabel,
+      status: project.statusLabel || project.status,
+      distance: formatDistanceKm(distanceKm),
+      completion: project.completionPercent,
+      impact: project.impact?.timeSaved,
+      citizens: project.impact?.population,
+    };
+    setNotifications((current) => [...current, notification].slice(-3));
+    const timer = window.setTimeout(() => {
+      setNotifications((current) => current.filter((item) => item.id !== storageKey));
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, [location, enrichedProjects, notificationsEnabled]);
+
+  useEffect(() => {
+    if (!notificationsEnabled || !location || enrichedProjects.length === 0) return;
+    if (!isTimeRelevant(geoPreferences.timeMode)) return;
+    const targetId = "bharat-mandapam-civic-hub";
+    const project = enrichedProjects.find((item) => item.id === targetId);
+    if (!project || !Number.isFinite(project.latitude) || !Number.isFinite(project.longitude)) return;
+    const distanceKm = haversineKm(
+      location.lat,
+      location.lng,
+      project.latitude,
+      project.longitude
+    );
+    const radius = 3 * speedMultiplier(geoPreferences.speedMode);
+    if (distanceKm > radius) return;
+    if (!interestMatches(project)) return;
+
+    const storageKey = `civic:geo:${targetId}`;
+    if (window.sessionStorage.getItem(storageKey)) return;
+    window.sessionStorage.setItem(storageKey, "seen");
+
+    const message = `Nearby alert: ${project.name} (${formatDistanceKm(distanceKm)} away) at Bharat Mandapam.`;
+    const notification = { id: storageKey, message, type: "geo" };
+    setNotifications((current) => [...current, notification].slice(-3));
+
+    const timer = window.setTimeout(() => {
+      setNotifications((current) => current.filter((item) => item.id !== storageKey));
+    }, 10000);
+
+    return () => window.clearTimeout(timer);
+  }, [location, enrichedProjects, notificationsEnabled, geoPreferences]);
 
   useEffect(() => {
     let active = true;
@@ -200,7 +352,7 @@ export default function App() {
   }, [selectedProjectId]);
 
   const filteredProjects = useMemo(() => {
-    return projects.filter((project) => {
+    let scoped = projects.filter((project) => {
       const matchesSearch =
         filters.search.trim().length === 0 ||
         `${project.name} ${project.city} ${project.state} ${project.typeLabel}`
@@ -215,7 +367,22 @@ export default function App() {
         project.timeline.endYear <= filters.timelineEnd;
       return matchesSearch && matchesStatus && matchesType && matchesBudget && matchesTimeline;
     });
-  }, [projects, filters]);
+    if (locationResult) {
+      const radiusKm = locationResult.radiusKm || 60;
+      scoped = scoped.filter(
+        (project) =>
+          Number.isFinite(project.latitude) &&
+          Number.isFinite(project.longitude) &&
+          haversineKm(
+            locationResult.lat,
+            locationResult.lng,
+            project.latitude,
+            project.longitude
+          ) <= radiusKm
+      );
+    }
+    return scoped;
+  }, [projects, filters, locationResult]);
 
   const typeOptions = useMemo(() => {
     const set = new Set(projects.map((project) => project.typeLabel));
@@ -223,8 +390,7 @@ export default function App() {
   }, [projects]);
 
   const selectedProject =
-    filteredProjects.find((project) => project.id === selectedProjectId) ||
-    projects.find((project) => project.id === selectedProjectId) ||
+    enrichedProjects.find((project) => project.id === selectedProjectId) ||
     null;
 
   async function handleSelectProject(projectId) {
@@ -252,6 +418,84 @@ export default function App() {
     setFilters((current) => ({ ...current, ...patch }));
   }
 
+  async function handleLocationSearch(event, overrideQuery) {
+    event?.preventDefault?.();
+    const query = (overrideQuery ?? locationQuery).trim();
+    if (!query) return;
+    setLocationSearching(true);
+    setLocationSearchError("");
+    try {
+      const params = new URLSearchParams({
+        q: query,
+        format: "json",
+        addressdetails: "1",
+        limit: "1",
+        countrycodes: "in",
+      });
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+        headers: {
+          Accept: "application/json",
+        },
+      });
+      if (!response.ok) {
+        throw new Error("Unable to search location.");
+      }
+      const results = await response.json();
+      const top = results?.[0];
+      if (!top) {
+        setLocationResult(null);
+        setLocationSearchError("No matching location found.");
+        return;
+      }
+      const lat = Number(top.lat);
+      const lng = Number(top.lon);
+      const display = top.display_name || query;
+      const type = (top.type || "").toLowerCase();
+      const radiusKm = type.includes("city") || type.includes("state") || type.includes("region") ? 70 : 35;
+      const nextResult = {
+        label: display,
+        lat,
+        lng,
+        radiusKm,
+      };
+      setLocationResult(nextResult);
+      setMapCenter({ lat, lng });
+      setMapZoom(type.includes("city") ? 11.5 : 12.5);
+    } catch (error) {
+      setLocationSearchError(error.message || "Location search failed.");
+    } finally {
+      setLocationSearching(false);
+    }
+  }
+
+  function handleLocationClear() {
+    setLocationResult(null);
+    setLocationSearchError("");
+    setLocationQuery("");
+    setMapCenter(null);
+    setMapZoom(null);
+  }
+
+  function isTimeRelevant(mode) {
+    if (mode === "any") return true;
+    const hour = new Date().getHours();
+    if (mode === "commute") return (hour >= 7 && hour <= 10) || (hour >= 17 && hour <= 20);
+    if (mode === "night") return hour >= 21 || hour <= 5;
+    return true;
+  }
+
+  function speedMultiplier(mode) {
+    if (mode === "driving") return 1.6;
+    if (mode === "transit") return 1.3;
+    return 1;
+  }
+
+  function interestMatches(project) {
+    if (geoPreferences.interestMode === "all") return true;
+    const tags = project.interestTags || getProjectInterestTags(project);
+    return tags.includes(geoPreferences.interestMode);
+  }
+
   function toggleBookmark(projectId) {
     setBookmarkedIds((current) =>
       current.includes(projectId) ? current.filter((id) => id !== projectId) : [projectId, ...current]
@@ -265,6 +509,10 @@ export default function App() {
       }
       return { isLoggedIn: true, name: "Aarav Mehta", role: "admin" };
     });
+  }
+
+  function handleLogin(name, email) {
+    setUser({ isLoggedIn: true, name: name || "Citizen", role: "viewer", email: email || "" });
   }
 
   async function handleAdminSubmit(event) {
@@ -296,6 +544,40 @@ export default function App() {
     }
   }
 
+  function handleAdminAnnouncement(text) {
+    if (!text.trim()) return;
+    const entry = {
+      id: `ann-${Date.now()}`,
+      message: text.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    const next = [entry, ...announcementFeed].slice(0, 8);
+    setAnnouncementFeed(next);
+    try {
+      window.localStorage.setItem("civic:admin:announcements", JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+    const notification = { id: entry.id, message: `Admin update: ${entry.message}`, type: "admin" };
+    setNotifications((current) => [...current, notification].slice(-4));
+    window.setTimeout(() => {
+      setNotifications((current) => current.filter((item) => item.id !== entry.id));
+    }, 12000);
+  }
+
+  function handleAdminStatusUpdate(projectId, status) {
+    if (!projectId || !status) return;
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === projectId ? enrichProject({ ...project, status }) : project
+      )
+    );
+  }
+
+  if (!user.isLoggedIn) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
+
   return (
     <div className="civic-app">
       <TopNav onMenuClick={() => setDashboardOpen((current) => !current)} dashboardOpen={dashboardOpen} />
@@ -314,60 +596,60 @@ export default function App() {
           isLocating={isLocating}
           hasRequestedLocation={hasRequestedLocation}
           isTracking={isTracking}
+          mapCenter={mapCenter}
+          mapZoom={mapZoom}
           selectedProjectId={selectedProjectId}
           onSelectProject={handleSelectProject}
           onMapModeChange={setMapMode}
         />
 
-        <FilterPanel
-          open={filterPanelOpen}
-          onToggle={() => setFilterPanelOpen((current) => !current)}
-          filters={filters}
-          typeOptions={typeOptions}
-          budgetBounds={filterBounds.budget}
-          timelineBounds={{ years: filterBounds.years }}
-          onChange={handleFilterChange}
-        />
+        {user.isLoggedIn && (
+          <FilterPanel
+            open={filterPanelOpen}
+            onToggle={() => setFilterPanelOpen((current) => !current)}
+            filters={filters}
+            typeOptions={typeOptions}
+            budgetBounds={filterBounds.budget}
+            timelineBounds={{ years: filterBounds.years }}
+            onChange={handleFilterChange}
+            locationQuery={locationQuery}
+            onLocationQuery={setLocationQuery}
+            onLocationSearch={handleLocationSearch}
+            onLocationClear={handleLocationClear}
+            locationResult={locationResult}
+            locationError={locationSearchError}
+            locationSearching={locationSearching}
+          />
+        )}
 
-        <ProjectInfoPanel
-          project={selectedProject}
-          onClose={() => setSelectedProjectId(null)}
-          onOpen3D={() => setShow3D(true)}
-          onToggleBookmark={() => selectedProject && toggleBookmark(selectedProject.id)}
-          isBookmarked={selectedProject ? bookmarkedIds.includes(selectedProject.id) : false}
-        />
+        {user.isLoggedIn && (
+          <ProjectInfoPanel
+            project={selectedProject}
+            onClose={() => setSelectedProjectId(null)}
+            onOpen3D={() => setShow3D(true)}
+            onToggleBookmark={() => selectedProject && toggleBookmark(selectedProject.id)}
+            isBookmarked={selectedProject ? bookmarkedIds.includes(selectedProject.id) : false}
+          />
+        )}
 
         {status.error && <div className="system-alert">{status.error}</div>}
       </main>
 
-      <DashboardPanel
-        open={dashboardOpen}
-        onClose={() => setDashboardOpen(false)}
-        user={user}
-        onToggleLogin={handleLoginToggle}
-        projects={projects}
-        search={dashboardSearch}
-        onSearch={setDashboardSearch}
-        bookmarkedIds={bookmarkedIds}
-        recentIds={recentIds}
-        onToggleBookmark={toggleBookmark}
-        onSelectProject={(id) => {
-          handleSelectProject(id);
-          setDashboardOpen(false);
-        }}
-        mapModes={MAP_MODES}
-        mapMode={mapMode}
-        onMapModeChange={setMapMode}
-        notificationsEnabled={notificationsEnabled}
-        onToggleNotifications={setNotificationsEnabled}
-        isAdmin={user.isLoggedIn && user.role === "admin"}
-        onAdminSubmit={handleAdminSubmit}
-        adminState={adminState}
-      />
+      {user.isLoggedIn && (
+        <DashboardPanel
+          open={dashboardOpen}
+          onClose={() => setDashboardOpen(false)}
+          activeSection={dashboardSection}
+          onSelectSection={setDashboardSection}
+          user={user}
+        />
+      )}
 
-      <NotificationSystem notifications={notifications} />
+      {user.isLoggedIn && <NotificationSystem notifications={notifications} />}
 
-      <Project3DModal open={show3D} project={selectedProject} onClose={() => setShow3D(false)} />
+      {user.isLoggedIn && (
+        <Project3DModal open={show3D} project={selectedProject} onClose={() => setShow3D(false)} />
+      )}
     </div>
   );
 }

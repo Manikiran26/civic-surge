@@ -313,6 +313,22 @@ function campusModel(meta, options = {}) {
 }
 
 const savedProjectModels = {
+  "bennett-university-mobility-hub": campusModel(
+    {
+      title: "Campus mobility hub",
+      family: "education",
+      summary: "Student mobility hub with plaza spine and transit canopy.",
+    },
+    { wingCount: 3, addAuditorium: true, scale: 1.04 }
+  ),
+  "bharat-mandapam-civic-hub": campusModel(
+    {
+      title: "Convention plaza + mobility hub",
+      family: "civic",
+      summary: "Public plaza spine with shaded pavilion massing near Bharat Mandapam.",
+    },
+    { wingCount: 3, addAuditorium: true, scale: 1.06 }
+  ),
   "mumbai-metro-line-2a": metroModel({ title: "Metro viaduct interchange", family: "metro", summary: "Elevated two-track interchange massing for the Dahisar East to DN Nagar corridor." }, { viaductLength: 5.8, stationWidth: 2.25, trainCars: 4, supportCount: 4, addConcourse: true }),
   "mumbai-metro-line-7": metroModel({ title: "North-south elevated metro", family: "metro", summary: "Linear elevated station massing with longer train formation." }, { viaductLength: 5.9, stationWidth: 2.15, trainCars: 4, supportCount: 4 }),
   "malad-stp": wastewaterModel({ title: "Sewage treatment process train", family: "wastewater", summary: "Clarifier and processing tank layout for the Malad plant." }, { tankCount: 3, addDigesters: true }),

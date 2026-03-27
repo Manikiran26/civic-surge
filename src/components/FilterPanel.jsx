@@ -8,6 +8,13 @@ export default function FilterPanel({
   timelineBounds,
   onToggle,
   onChange,
+  locationQuery,
+  onLocationQuery,
+  onLocationSearch,
+  onLocationClear,
+  locationResult,
+  locationError,
+  locationSearching,
 }) {
   return (
     <aside className={open ? "filter-panel" : "filter-panel is-collapsed"}>
@@ -23,15 +30,34 @@ export default function FilterPanel({
         </div>
 
         <label className="filter-field">
-          <span>Search</span>
-          <div className="search-input">
+          <span>Search (projects + places)</span>
+          <form
+            className="search-input"
+            onSubmit={(event) => onLocationSearch(event, filters.search)}
+          >
             <Search size={14} />
             <input
               value={filters.search}
-              onChange={(event) => onChange({ search: event.target.value })}
-              placeholder="Search by name, city, type"
+              onChange={(event) => {
+                const value = event.target.value;
+                onChange({ search: value });
+                onLocationQuery(value);
+              }}
+              placeholder="Search projects, cities, or states"
             />
-          </div>
+            <button type="submit" className="ghost-button" disabled={locationSearching}>
+              {locationSearching ? "Searching..." : "Go"}
+            </button>
+          </form>
+          {locationResult && (
+            <div className="filter-location-result">
+              <span>{locationResult.label}</span>
+              <button type="button" className="ghost-button" onClick={onLocationClear}>
+                Clear
+              </button>
+            </div>
+          )}
+          {locationError && <div className="filter-location-error">{locationError}</div>}
         </label>
 
         <label className="filter-field">

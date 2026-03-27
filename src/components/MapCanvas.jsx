@@ -85,6 +85,108 @@ function hasValidCoordinates(project) {
   return Number.isFinite(project?.latitude) && Number.isFinite(project?.longitude);
 }
 
+function toNumber(value, fallback = null) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function getGeoRadiusMeters(project) {
+  return (
+    toNumber(project?.geofenceRadiusM) ||
+    toNumber(project?.geofence_radius_m) ||
+    toNumber(project?.geofence_radius) ||
+    300
+  );
+}
+
+function getGeoColor(project) {
+  const seed = String(project?.id || project?.name || "civic");
+  const palette = ["#f97316", "#22d3ee", "#a855f7", "#f59e0b", "#38bdf8", "#f43f5e"];
+  const index = seed.charCodeAt(0) % palette.length;
+  return palette[index];
+}
+
+function getGeoShape(project) {
+  const shape = String(project?.geofenceShape || project?.geofence_shape || "").toLowerCase();
+  if (shape === "circle") return "circle";
+  if (shape === "pentagon") return "pentagon";
+  return "organic";
+}
+
+function seededRandom(seed) {
+  let value = seed;
+  return () => {
+    value = (value * 9301 + 49297) % 233280;
+    return value / 233280;
+  };
+}
+
+function buildGeoFencePolygon(lat, lng, radiusMeters, shape, seedValue) {
+  const steps = shape === "circle" ? 36 : shape === "pentagon" ? 5 : 12;
+  const coords = [];
+  const earthRadius = 6371000;
+  const angDist = radiusMeters / earthRadius;
+  const latRad = (lat * Math.PI) / 180;
+  const lngRad = (lng * Math.PI) / 180;
+  const rand = seededRandom(seedValue || 7);
+
+  for (let i = 0; i <= steps; i += 1) {
+    const bearing = (i / steps) * Math.PI * 2;
+    const sinLat = Math.sin(latRad);
+    const cosLat = Math.cos(latRad);
+    const wobble = shape === "organic" ? 0.82 + rand() * 0.4 : 1;
+    const sinAng = Math.sin(angDist * wobble);
+    const cosAng = Math.cos(angDist * wobble);
+
+    const lat2 = Math.asin(sinLat * cosAng + cosLat * sinAng * Math.cos(bearing));
+    const lng2 =
+      lngRad +
+      Math.atan2(
+        Math.sin(bearing) * sinAng * cosLat,
+        cosAng - sinLat * Math.sin(lat2)
+      );
+    coords.push([(lng2 * 180) / Math.PI, (lat2 * 180) / Math.PI]);
+  }
+  return coords;
+}
+
+function buildGeoFenceFeatures(projects) {
+  return {
+    type: "FeatureCollection",
+    features: projects
+      .filter(hasValidCoordinates)
+      .map((project) => {
+        const radius = getGeoRadiusMeters(project);
+        const shape = getGeoShape(project);
+        const polygon =
+          project?.geofencePolygon ||
+          project?.geofence_polygon ||
+          project?.geofence_points ||
+          null;
+        const seed = String(project?.id || project?.name || "civic").charCodeAt(0);
+        const coords =
+          polygon && Array.isArray(polygon)
+            ? polygon
+            : buildGeoFencePolygon(project.latitude, project.longitude, radius, shape, seed);
+        return {
+          type: "Feature",
+          properties: {
+            id: project.id,
+            radius,
+            shape,
+            color: getGeoColor(project),
+          },
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              coords,
+            ],
+          },
+        };
+      }),
+  };
+}
+
 function getInitialPitch(mode) {
   if (mode === "satellite") return 48;
   if (mode === "dark") return 38;
@@ -105,6 +207,8 @@ export default function MapCanvas({
   isLocating,
   hasRequestedLocation,
   isTracking,
+  mapCenter,
+  mapZoom,
   selectedProjectId,
   onSelectProject,
   onMapModeChange,
@@ -116,6 +220,9 @@ export default function MapCanvas({
   const leafletLabelRef = useRef(null);
   const markersRef = useRef(new Map());
   const userMarkerRef = useRef(null);
+  const geoFenceRef = useRef(new Map());
+  const centerRef = useRef(DEFAULT_CENTER);
+  const zoomRef = useRef(4.4);
   const fallbackTimerRef = useRef(null);
   const errorCountRef = useRef(0);
   const leafletErrorCountRef = useRef(0);
@@ -127,16 +234,37 @@ export default function MapCanvas({
   const [tileOverride, setTileOverride] = useState(null);
   const [offlineTiles, setOfflineTiles] = useState(false);
   const [isTilted, setIsTilted] = useState(mapMode !== "minimal");
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadingLabel, setLoadingLabel] = useState("Initializing map engine...");
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState("");
+  const [showLoadingOverlay, setShowLoadingOverlay] = useState(false);
   const style = useMemo(() => getMapStyle(mapMode), [mapMode]);
+
+  useEffect(() => {
+    if (!mapCenter || !ready) return;
+    const targetZoom = typeof mapZoom === "number" ? mapZoom : 11.5;
+    if (provider === "maplibre" && mapRef.current) {
+      mapRef.current.flyTo({
+        center: [mapCenter.lng, mapCenter.lat],
+        zoom: targetZoom,
+        speed: 0.8,
+        curve: 1.2,
+        essential: true,
+      });
+      centerRef.current = [mapCenter.lat, mapCenter.lng];
+      zoomRef.current = targetZoom;
+    }
+    if (provider === "leaflet" && leafletMapRef.current) {
+      leafletMapRef.current.setView([mapCenter.lat, mapCenter.lng], targetZoom, { animate: true });
+      centerRef.current = [mapCenter.lat, mapCenter.lng];
+      zoomRef.current = targetZoom;
+    }
+  }, [mapCenter, mapZoom, provider, ready]);
 
   useEffect(() => {
     setIsTilted(mapMode !== "minimal");
     setTileOverride(null);
     setOfflineTiles(false);
     leafletErrorCountRef.current = 0;
-    setIsLoading(true);
   }, [mapMode]);
 
   useEffect(() => {
@@ -149,20 +277,22 @@ export default function MapCanvas({
     if (!containerRef.current) return undefined;
 
     setReady(false);
-    setIsLoading(true);
-    setLoadingLabel("Loading WebGL map...");
+    setIsLoading(false);
+    setLoadingLabel("");
+    setShowLoadingOverlay(false);
     errorCountRef.current = 0;
     let loadTimeout;
     let tileTimeout;
+    let slowLoadTimer;
     let hasTiles = false;
 
     let map;
     try {
       map = new maplibregl.Map({
         container: containerRef.current,
-        style,
-        center: [DEFAULT_CENTER[1], DEFAULT_CENTER[0]],
-        zoom: 4.4,
+        style: getMapStyle(mapMode),
+        center: [centerRef.current[1], centerRef.current[0]],
+        zoom: zoomRef.current,
         maxZoom: mapMode === "satellite" ? 18 : 20,
         pitch: getInitialPitch(mapMode),
         bearing: mapMode === "infra" ? 12 : 0,
@@ -182,6 +312,7 @@ export default function MapCanvas({
       setReady(true);
       setIsLoading(false);
       setLoadingLabel("");
+      setShowLoadingOverlay(false);
     };
 
     const handleError = (event) => {
@@ -203,12 +334,24 @@ export default function MapCanvas({
         hasTiles = true;
       }
     });
+    map.on("moveend", () => {
+      const center = map.getCenter();
+      centerRef.current = [center.lat, center.lng];
+      zoomRef.current = map.getZoom();
+    });
 
     fallbackTimerRef.current = window.setTimeout(() => {
       if (!map.loaded()) {
         setProvider("leaflet");
       }
     }, 5000);
+
+    slowLoadTimer = window.setTimeout(() => {
+      if (!map.loaded()) {
+        setShowLoadingOverlay(true);
+        setLoadingLabel("Loading map...");
+      }
+    }, 1200);
 
     loadTimeout = window.setTimeout(() => {
       if (!map.loaded()) {
@@ -232,9 +375,12 @@ export default function MapCanvas({
       window.clearTimeout(fallbackTimerRef.current);
       window.clearTimeout(loadTimeout);
       window.clearTimeout(tileTimeout);
+      window.clearTimeout(slowLoadTimer);
       resizeObserver.disconnect();
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current.clear();
+      geoFenceRef.current.forEach((circle) => circle.remove());
+      geoFenceRef.current.clear();
       userMarkerRef.current?.remove();
       userMarkerRef.current = null;
       map.off("load", handleLoad);
@@ -242,14 +388,32 @@ export default function MapCanvas({
       map.remove();
       mapRef.current = null;
     };
-  }, [provider, style, mapMode]);
+  }, [provider]);
+
+  useEffect(() => {
+    if (provider !== "maplibre") return;
+    const map = mapRef.current;
+    if (!map) return;
+    const current = map.getCenter();
+    const currentZoom = map.getZoom();
+    map.setStyle(getMapStyle(mapMode));
+    map.once("style.load", () => {
+      map.jumpTo({
+        center: current,
+        zoom: currentZoom,
+        pitch: getInitialPitch(mapMode),
+        bearing: mapMode === "infra" ? 12 : 0,
+      });
+    });
+  }, [mapMode, provider]);
 
   useEffect(() => {
     if (provider !== "leaflet") return undefined;
     if (!containerRef.current) return undefined;
 
-    setIsLoading(true);
-    setLoadingLabel("Loading lightweight map...");
+    setIsLoading(false);
+    setLoadingLabel("");
+    setShowLoadingOverlay(false);
 
     if (mapRef.current) {
       mapRef.current.remove();
@@ -262,7 +426,7 @@ export default function MapCanvas({
       zoomControl: false,
       attributionControl: false,
       zoomSnap: 0.25,
-    }).setView(DEFAULT_CENTER, 4.4);
+    }).setView(centerRef.current, zoomRef.current);
 
     leafletMapRef.current = map;
     setReady(true);
@@ -271,7 +435,6 @@ export default function MapCanvas({
     const tileLoadTimeout = window.setTimeout(() => {
       if (!hasTileLoad) {
         setOfflineTiles(true);
-        setIsLoading(false);
       }
     }, TILE_LOAD_TIMEOUT);
 
@@ -302,6 +465,7 @@ export default function MapCanvas({
       window.clearTimeout(tileLoadTimeout);
       setIsLoading(false);
       setLoadingLabel("");
+      setShowLoadingOverlay(false);
     });
     leafletLayerRef.current.addTo(map);
     if (!tileOverride && source.labelTiles?.length) {
@@ -319,6 +483,8 @@ export default function MapCanvas({
       resizeObserver.disconnect();
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current.clear();
+      geoFenceRef.current.forEach((circle) => circle.remove());
+      geoFenceRef.current.clear();
       userMarkerRef.current?.remove();
       userMarkerRef.current = null;
       leafletLayerRef.current?.remove();
@@ -328,7 +494,7 @@ export default function MapCanvas({
       map.remove();
       leafletMapRef.current = null;
     };
-  }, [provider, mapMode]);
+  }, [provider]);
 
   useEffect(() => {
     if (provider !== "leaflet") return;
@@ -420,6 +586,88 @@ export default function MapCanvas({
       });
     }
   }, [projects, selectedProjectId, provider, ready, onSelectProject]);
+
+  useEffect(() => {
+    if (!ready) return;
+
+    if (provider === "maplibre") {
+      const map = mapRef.current;
+      if (!map) return;
+      const data = buildGeoFenceFeatures(projects);
+      const existing = map.getSource?.("geofences");
+      if (existing && existing.setData) {
+        existing.setData(data);
+      } else {
+        map.addSource("geofences", {
+          type: "geojson",
+          data,
+        });
+        map.addLayer({
+          id: "geofences-fill",
+          type: "fill",
+          source: "geofences",
+          paint: {
+            "fill-color": ["get", "color"],
+            "fill-opacity": 0.4,
+            "fill-outline-color": ["get", "color"],
+          },
+        });
+        map.addLayer({
+          id: "geofences-line",
+          type: "line",
+          source: "geofences",
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": 1.4,
+          },
+        });
+      }
+      return;
+    }
+
+    if (provider === "leaflet") {
+      const map = leafletMapRef.current;
+      if (!map) return;
+
+      const nextIds = new Set();
+      projects.forEach((project) => {
+        if (!hasValidCoordinates(project)) return;
+        const radius = getGeoRadiusMeters(project);
+        const shape = getGeoShape(project);
+        const color = getGeoColor(project);
+        const polygon =
+          project?.geofencePolygon ||
+          project?.geofence_polygon ||
+          project?.geofence_points ||
+          null;
+        nextIds.add(project.id);
+        const existing = geoFenceRef.current.get(project.id);
+        if (existing) {
+          existing.remove();
+          geoFenceRef.current.delete(project.id);
+        }
+        const seed = String(project?.id || project?.name || "civic").charCodeAt(0);
+        const points =
+          polygon && Array.isArray(polygon)
+            ? polygon
+            : buildGeoFencePolygon(project.latitude, project.longitude, radius, shape, seed);
+        const shapeLayer = L.polygon(points.map(([lng, lat]) => [lat, lng]), {
+          color,
+          weight: 1.4,
+          fillColor: color,
+          fillOpacity: 0.4,
+        }).addTo(map);
+        geoFenceRef.current.set(project.id, shapeLayer);
+      });
+
+      geoFenceRef.current.forEach((circle, id) => {
+        if (!nextIds.has(id)) {
+          circle.remove();
+          geoFenceRef.current.delete(id);
+        }
+      });
+    }
+  }, [projects, provider, ready, mapMode]);
 
   useEffect(() => {
     if (!selectedProjectId || !ready) return;
@@ -527,22 +775,7 @@ export default function MapCanvas({
   return (
     <div className="map-shell">
       <div ref={containerRef} className="map-shell__canvas" />
-      {!userLocation && locationPermission === "prompt" && !hasRequestedLocation && (
-        <div className="map-shell__location-gate">
-          <div className="map-shell__location-gate-card">
-            <div className="map-shell__location-gate-title">Enable location</div>
-            <div className="map-shell__location-gate-subtitle">
-              Allow location access to show nearby project alerts.
-            </div>
-            {onRequestLocation && (
-              <button type="button" className="map-shell__location-btn" onClick={handleLocateClick}>
-                Allow location
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-      {isLoading && (
+      {showLoadingOverlay && (
         <div className="map-shell__loading">
           <div className="map-shell__loading-card">
             <div className="map-shell__loading-title">Map loading</div>
