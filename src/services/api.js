@@ -17,12 +17,24 @@ function resolveApiBase() {
   return "/api";
 }
 
+function isGitHubPagesHost() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return /\.github\.io$/i.test(window.location.hostname);
+}
+
 const API_BASE =
   resolveApiBase();
 const USE_LOCAL_DATA =
-  typeof import.meta !== "undefined" &&
-  import.meta.env &&
-  String(import.meta.env.VITE_USE_LOCAL_DATA || "").toLowerCase() === "true";
+  (typeof import.meta !== "undefined" &&
+    import.meta.env &&
+    String(import.meta.env.VITE_USE_LOCAL_DATA || "").toLowerCase() === "true") ||
+  ((typeof import.meta !== "undefined" &&
+    import.meta.env &&
+    !import.meta.env.VITE_API_BASE_URL) &&
+    isGitHubPagesHost());
 const OFFLINE_REPORTS_KEY = "civic:offline:reports";
 const OFFLINE_ADMIN_PROJECTS_KEY = "civic:offline:admin-projects";
 
