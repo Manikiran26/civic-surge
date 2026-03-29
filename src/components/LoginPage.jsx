@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Apple, Lock, Mail, MapPin, Shield, Sparkles } from "lucide-react";
+import { assetUrl } from "../utils/assets";
 
 export default function LoginPage({ onLogin }) {
   const cardRef = useRef(null);
@@ -37,7 +38,7 @@ export default function LoginPage({ onLogin }) {
         <div className="auth-map" aria-hidden="true">
           <img
             className="auth-map__image"
-            src="/download.png"
+            src={assetUrl("download.png")}
             alt=""
             loading="eager"
             decoding="async"
@@ -48,7 +49,7 @@ export default function LoginPage({ onLogin }) {
         <div className="auth-left__content">
           <div className="auth-logo">
             <span className="brand__mark">
-              <img src="/models/PHOTO-2026-03-28-00-40-54.jpg" alt="CivicSurge logo" />
+              <img src={assetUrl("models/PHOTO-2026-03-28-00-40-54.jpg")} alt="CivicSurge logo" />
             </span>
             <div>
               <div className="auth-logo__name">CivicSurge</div>

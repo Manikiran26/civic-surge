@@ -1,11 +1,12 @@
 import { BarChart3, Box, MoreVertical } from "lucide-react";
+import { assetUrl } from "../utils/assets";
 
 export default function TopNav({ onMenuClick, dashboardOpen, activeWorkspace, onWorkspaceChange }) {
   return (
     <header className="top-nav">
       <div className="brand">
         <span className="brand__mark">
-          <img src="/models/PHOTO-2026-03-28-00-40-54.jpg" alt="CivicSurge logo" />
+          <img src={assetUrl("models/PHOTO-2026-03-28-00-40-54.jpg")} alt="CivicSurge logo" />
         </span>
         <div>
           <div className="brand__name">CivicSurge</div>

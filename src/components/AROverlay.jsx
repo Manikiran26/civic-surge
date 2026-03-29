@@ -5,13 +5,14 @@ import { useState, useRef, useEffect } from "react";
 import { Camera, Layers, Navigation, Wifi, WifiOff, Boxes, Info, ArrowLeft, Zap, Play, Maximize2 } from "lucide-react";
 import { projects, categoryColors } from "../data/projects";
 import { demoProjects } from "../data/demoProjects";
+import { assetUrl } from "../utils/assets";
 
 // Video Mapping for Future Visions
 const videoMap = {
-  hospital_001: "/videos/hospital.mp4",
-  school_001: "/videos/school.mp4",
-  bridge_001: "/videos/bridge.mp4",
-  metro_001: "/videos/metro.mp4"
+  hospital_001: assetUrl("videos/hospital.mp4"),
+  school_001: assetUrl("videos/school.mp4"),
+  bridge_001: assetUrl("videos/bridge.mp4"),
+  metro_001: assetUrl("videos/metro.mp4")
 };
 
 const arCards = [

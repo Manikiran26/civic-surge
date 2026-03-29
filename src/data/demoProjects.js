@@ -1,3 +1,5 @@
+import { assetUrl } from "../utils/assets";
+
 export function getProjectName(type) {
   switch (type) {
     case "transport": return "Delhi Metro Phase 4";
@@ -38,7 +40,7 @@ const baseProjects = [
     citizens: "1.2M+",
     status: "Ongoing",
     agency: "DMRC",
-    video: "/videos/metro.mp4",
+    video: assetUrl("videos/metro.mp4"),
     lat: 28.6133,
     lng: 77.2420
   },
@@ -50,7 +52,7 @@ const baseProjects = [
     citizens: "850K+",
     status: "Planned",
     agency: "Ministry of Health",
-    video: "/videos/hospital.mp4",
+    video: assetUrl("videos/hospital.mp4"),
     lat: 28.5672,
     lng: 77.2100
   },
@@ -62,7 +64,7 @@ const baseProjects = [
     citizens: "296K+",
     status: "Completed",
     agency: "Public Authority",
-    video: "/videos/school.mp4",
+    video: assetUrl("videos/school.mp4"),
     lat: 28.6200,
     lng: 77.2300
   },
@@ -74,7 +76,7 @@ const baseProjects = [
     citizens: "900K+",
     status: "Ongoing",
     agency: "NHAI",
-    video: "/videos/bridge.mp4",
+    video: assetUrl("videos/bridge.mp4"),
     lat: 28.6300,
     lng: 77.2200
   }
