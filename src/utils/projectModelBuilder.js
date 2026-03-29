@@ -17,18 +17,48 @@ function buildMaterialLibrary(profile, options = {}) {
     }),
     secondary: new THREE.MeshStandardMaterial({
       color: new THREE.Color(secondary),
-      roughness: 0.4,
-      metalness: 0.12,
+      roughness: 0.42,
+      metalness: 0.1,
     }),
     neutral: new THREE.MeshStandardMaterial({
       color: 0xe2e8f0,
-      roughness: 0.82,
+      roughness: 0.78,
       metalness: 0.05,
+    }),
+    facade: new THREE.MeshStandardMaterial({
+      color: 0xd9dee6,
+      roughness: 0.74,
+      metalness: 0.04,
+    }),
+    concrete: new THREE.MeshStandardMaterial({
+      color: 0xb8c2cf,
+      roughness: 0.88,
+      metalness: 0.02,
     }),
     dark: new THREE.MeshStandardMaterial({
       color: 0x0f172a,
       roughness: 0.96,
       metalness: 0.02,
+    }),
+    asphalt: new THREE.MeshStandardMaterial({
+      color: 0x1b2432,
+      roughness: 0.98,
+      metalness: 0.01,
+    }),
+    roof: new THREE.MeshStandardMaterial({
+      color: 0x64748b,
+      roughness: 0.66,
+      metalness: 0.14,
+    }),
+    landscape: new THREE.MeshStandardMaterial({
+      color: 0x436850,
+      roughness: 1,
+      metalness: 0,
+    }),
+    frame: new THREE.MeshStandardMaterial({
+      color: 0x475569,
+      roughness: 0.46,
+      metalness: 0.38,
     }),
     warning: new THREE.MeshStandardMaterial({
       color: 0xfacc15,
@@ -42,10 +72,11 @@ function buildMaterialLibrary(profile, options = {}) {
     }),
     glass: new THREE.MeshStandardMaterial({
       color: 0xbde7ff,
-      roughness: 0.16,
-      metalness: 0.24,
+      roughness: 0.08,
+      metalness: 0.18,
       transparent: true,
       opacity: options.glassOpacity ?? 0.78,
+      envMapIntensity: 1.15,
     }),
   };
 }
@@ -88,6 +119,11 @@ function applyTransform(mesh, element) {
     const [rx = 0, ry = 0, rz = 0] = element.rotation;
     mesh.rotation.set(rx, ry, rz);
   }
+
+  if (element.scale) {
+    const [sx = 1, sy = 1, sz = 1] = element.scale;
+    mesh.scale.set(sx, sy, sz);
+  }
 }
 
 function addSignatureBeacons(group, spec, materials, profile) {
@@ -118,10 +154,12 @@ export function buildSavedProjectModel(scene, project, options = {}) {
     const material = materials[element.role] || materials.neutral;
     const mesh = new THREE.Mesh(geometry, material);
     applyTransform(mesh, element);
+    mesh.castShadow = element.castShadow ?? true;
+    mesh.receiveShadow = element.receiveShadow ?? true;
     group.add(mesh);
   });
 
-  if (options.includeBeacons !== false) {
+  if (options.includeBeacons === true) {
     addSignatureBeacons(group, spec, materials, profile);
   }
 

@@ -1,7 +1,24 @@
 import { normalizedVerifiedProjects } from "../../shared/verifiedProjects.js";
 
+function resolveApiBase() {
+  if (typeof import.meta === "undefined" || !import.meta.env) {
+    return "/api";
+  }
+
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+
+  if (import.meta.env.DEV) {
+    const host = typeof window !== "undefined" ? window.location.hostname : "localhost";
+    return `http://${host}:4000/api`;
+  }
+
+  return "/api";
+}
+
 const API_BASE =
-  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE_URL) || "/api";
+  resolveApiBase();
 const USE_LOCAL_DATA =
   typeof import.meta !== "undefined" &&
   import.meta.env &&

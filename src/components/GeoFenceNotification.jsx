@@ -22,15 +22,13 @@ export default function GeoFenceNotification({ nearbyProjects, onSelectProject }
 
   const activeProject =
     nearbyProjects.find((project) => {
-      return !dismissedProjectIds.includes(project.id) && !window.sessionStorage.getItem(`geo-alert:${project.id}`);
+      return !dismissedProjectIds.includes(project.id);
     }) || null;
 
   useEffect(() => {
     if (!activeProject) {
       return undefined;
     }
-
-    window.sessionStorage.setItem(`geo-alert:${activeProject.id}`, "seen");
 
     const timer = window.setTimeout(() => {
       setDismissedProjectIds((current) => [...current, activeProject.id]);

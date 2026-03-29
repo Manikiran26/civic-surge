@@ -1,4 +1,4 @@
-import { BarChart3, Bell, MapPin, Shield, Target, Users } from "lucide-react";
+import { Bell, LogOut, Shield, Target } from "lucide-react";
 
 export default function DashboardPanel({
   open,
@@ -6,23 +6,9 @@ export default function DashboardPanel({
   activeSection,
   onSelectSection,
   user,
+  onLogout,
 }) {
   const sections = [
-    {
-      id: "map",
-      title: "Map Dashboard (Core)",
-      icon: MapPin,
-      summary: "Live map with geo-fenced zones. Click any project to view details and activity.",
-      cards: [
-        { title: "Live Geo Map", desc: "Real-time site visibility" },
-        { title: "Project Focus", desc: "Tap any marker for details" },
-      ],
-      content: [
-        "Live basemap with geo-fenced overlays and active projects.",
-        "One-click project detail with status, progress, and media.",
-        "Quick jump to location search and map modes.",
-      ],
-    },
     {
       id: "projects",
       title: "Project Management",
@@ -68,37 +54,6 @@ export default function DashboardPanel({
         "Preview what users see in the field.",
       ],
     },
-    {
-      id: "analytics",
-      title: "Analytics",
-      icon: BarChart3,
-      summary: "Footfall, engagement, and heatmaps.",
-      cards: [
-        { title: "Footfall", desc: "Counts, trends, peak hours" },
-        { title: "Engagement", desc: "Clicks, feedback, shares" },
-        { title: "Heatmaps", desc: "Traffic + dwell time" },
-      ],
-      content: [
-        "Track engagement across zones and campaigns.",
-        "View peak hours and visit distribution.",
-        "Export reports for government stakeholders.",
-      ],
-    },
-    {
-      id: "users",
-      title: "User & Role Management",
-      icon: Users,
-      summary: "Admin / Govt / Advertiser roles and permissions.",
-      cards: [
-        { title: "Admin / Govt / Advertiser", desc: "Role-based access control" },
-        { title: "Permissions", desc: "Approval + audit trail" },
-      ],
-      content: [
-        "Create roles and assign permissions.",
-        "Approval workflows for data edits.",
-        "Audit trails for accountability.",
-      ],
-    },
   ];
 
   const active = sections.find((item) => item.id === activeSection) || null;
@@ -126,6 +81,26 @@ export default function DashboardPanel({
           </div>
         )}
 
+        <section className="dashboard-section">
+          <div className="section-title">
+            <LogOut size={14} />
+            Session
+          </div>
+          <div className="dashboard-card-grid">
+            <button
+              type="button"
+              className="dashboard-card"
+              onClick={() => {
+                onClose?.();
+                onLogout?.();
+              }}
+            >
+              <strong>Log out</strong>
+              <span>End session and return to login</span>
+            </button>
+          </div>
+        </section>
+
         {active && (
           <section className="dashboard-section dashboard-detail">
             <div className="section-title">
@@ -144,114 +119,27 @@ export default function DashboardPanel({
           </section>
         )}
 
-        <section className="dashboard-section">
-          <div className="section-title">
-            <MapPin size={14} />
-            Map Dashboard (Core)
-          </div>
-          <p className="dashboard-copy">
-            Live map with geo-fenced zones. Click any project to view details and activity.
-          </p>
-          <div className="dashboard-card-grid">
-            <button type="button" className="dashboard-card" onClick={() => onSelectSection?.("map")}>
-              <strong>Live Geo Map</strong>
-              <span>Real-time site visibility</span>
-            </button>
-            <button type="button" className="dashboard-card" onClick={() => onSelectSection?.("map")}>
-              <strong>Project Focus</strong>
-              <span>Tap any marker for details</span>
-            </button>
-          </div>
-        </section>
-
-        <section className="dashboard-section">
-          <div className="section-title">
-            <Shield size={14} />
-            Project Management
-          </div>
-          <div className="dashboard-card-grid">
-            <button type="button" className="dashboard-card" onClick={() => onSelectSection?.("projects")}>
-              <strong>Add / Edit Projects</strong>
-              <span>Location, status, media</span>
-            </button>
-            <button type="button" className="dashboard-card" onClick={() => onSelectSection?.("projects")}>
-              <strong>3D + Media</strong>
-              <span>Images, models, documents</span>
-            </button>
-          </div>
-        </section>
-
-        <section className="dashboard-section">
-          <div className="section-title">
-            <Target size={14} />
-            Geo-Fencing & Targeting
-          </div>
-          <div className="dashboard-card-grid">
-            <button type="button" className="dashboard-card" onClick={() => onSelectSection?.("geofence")}>
-              <strong>Zone Builder</strong>
-              <span>Radius + polygon zones</span>
-            </button>
-            <button type="button" className="dashboard-card" onClick={() => onSelectSection?.("geofence")}>
-              <strong>Trigger Rules</strong>
-              <span>Entry, time, user type</span>
-            </button>
-          </div>
-        </section>
-
-        <section className="dashboard-section">
-          <div className="section-title">
-            <Bell size={14} />
-            Campaign / Notification Manager
-          </div>
-          <div className="dashboard-card-grid">
-            <button type="button" className="dashboard-card" onClick={() => onSelectSection?.("campaigns")}>
-              <strong>Create Messages</strong>
-              <span>Ads, alerts, announcements</span>
-            </button>
-            <button type="button" className="dashboard-card" onClick={() => onSelectSection?.("campaigns")}>
-              <strong>Link to Zones</strong>
-              <span>Deliver by location & time</span>
-            </button>
-          </div>
-        </section>
-
-        <section className="dashboard-section">
-          <div className="section-title">
-            <BarChart3 size={14} />
-            Analytics
-          </div>
-          <div className="dashboard-card-grid">
-            <button type="button" className="dashboard-card" onClick={() => onSelectSection?.("analytics")}>
-              <strong>Footfall</strong>
-              <span>Counts, trends, peak hours</span>
-            </button>
-            <button type="button" className="dashboard-card" onClick={() => onSelectSection?.("analytics")}>
-              <strong>Engagement</strong>
-              <span>Clicks, feedback, shares</span>
-            </button>
-            <button type="button" className="dashboard-card" onClick={() => onSelectSection?.("analytics")}>
-              <strong>Heatmaps</strong>
-              <span>Traffic + dwell time</span>
-            </button>
-          </div>
-        </section>
-
-        <section className="dashboard-section">
-          <div className="section-title">
-            <Users size={14} />
-            User & Role Management
-          </div>
-          <div className="dashboard-card-grid">
-            <button type="button" className="dashboard-card" onClick={() => onSelectSection?.("users")}>
-              <strong>Admin / Govt / Advertiser</strong>
-              <span>Role-based access control</span>
-            </button>
-            <button type="button" className="dashboard-card" onClick={() => onSelectSection?.("users")}>
-              <strong>Permissions</strong>
-              <span>Approval + audit trail</span>
-            </button>
-          </div>
-        </section>
+        {sections.map((section) => (
+          <section key={section.id} className="dashboard-section">
+            <div className="section-title">
+              <section.icon size={14} />
+              {section.title}
+            </div>
+            <div className="dashboard-card-grid">
+              {section.cards.map((card) => (
+                <button
+                  key={card.title}
+                  type="button"
+                  className="dashboard-card"
+                  onClick={() => onSelectSection?.(section.id)}
+                >
+                  <strong>{card.title}</strong>
+                  <span>{card.desc}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
       </aside>
     </div>
   );

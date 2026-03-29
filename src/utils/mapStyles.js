@@ -42,14 +42,21 @@ export function getMapStyle(mode) {
     id: "basemap",
     type: "raster",
     source: "basemap",
+    paint: {
+      "raster-fade-duration": 0,
+      "raster-resampling": "nearest",
+    },
   };
   const layers = [basemapLayer];
 
   if (mode === "infra") {
     basemapLayer.paint = {
+      "raster-fade-duration": 0,
+      "raster-resampling": "nearest",
       "raster-opacity": 0.96,
       "raster-brightness-max": 0.86,
       "raster-saturation": -0.2,
+      "raster-contrast": 0.08,
     };
   }
 
@@ -58,7 +65,11 @@ export function getMapStyle(mode) {
       id: "labels",
       type: "raster",
       source: "labels",
-      paint: { "raster-opacity": 0.9 },
+      paint: {
+        "raster-opacity": 0.92,
+        "raster-fade-duration": 0,
+        "raster-resampling": "nearest",
+      },
     });
   }
 

@@ -3,8 +3,17 @@ import { mappls, mappls_plugin } from "mappls-web-maps";
 export const mapplsClassObject = new mappls();
 export const mapplsPluginObject = new mappls_plugin();
 
+function resolveApiBase() {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+
+  const host = typeof window !== "undefined" ? window.location.hostname : "localhost";
+  return `http://${host}:4000/api`;
+}
+
 export const MAPPLS_TOKEN = import.meta.env.VITE_MAPPLS_TOKEN || "";
-export const MAPPLS_API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
+export const MAPPLS_API_BASE = resolveApiBase();
 
 export const MAP_MODES = {
   standard: {

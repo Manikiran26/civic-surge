@@ -10,7 +10,7 @@ try {
   }
 }
 
-const mysqlConfigured = Boolean(env.MYSQL_HOST && env.MYSQL_USER && env.MYSQL_DATABASE);
+const mysqlConfigured = env.hasDatabase;
 
 if (mysqlConfigured && !mysqlModule) {
   console.warn("MySQL settings are configured but mysql2 is not installed. Falling back to memory store.");

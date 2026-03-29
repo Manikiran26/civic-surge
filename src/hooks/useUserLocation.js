@@ -4,10 +4,41 @@ const fallbackLocation = {
   lat: 28.6139,
   lng: 77.209,
 };
+const LAST_LOCATION_KEY = "civic:last-known-location";
+
+function readStoredLocation() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(LAST_LOCATION_KEY) || "null");
+    if (
+      parsed &&
+      Number.isFinite(parsed.lat) &&
+      Number.isFinite(parsed.lng)
+    ) {
+      return {
+        lat: parsed.lat,
+        lng: parsed.lng,
+      };
+    }
+  } catch {
+    // ignore malformed cache
+  }
+
+  return null;
+}
 
 export default function useUserLocation(enabled = true) {
   const hasGeolocation = typeof navigator !== "undefined" && Boolean(navigator.geolocation);
-  const [location, setLocation] = useState(() => (hasGeolocation ? null : fallbackLocation));
+  const [location, setLocation] = useState(() => {
+    const storedLocation = readStoredLocation();
+    if (storedLocation) {
+      return storedLocation;
+    }
+    return hasGeolocation ? null : fallbackLocation;
+  });
   const [error, setError] = useState(() => (hasGeolocation ? "" : "Geolocation is not available in this browser."));
   const [permissionState, setPermissionState] = useState(() => (hasGeolocation ? "prompt" : "denied"));
   const [isRequesting, setIsRequesting] = useState(false);
@@ -49,12 +80,18 @@ export default function useUserLocation(enabled = true) {
   }, [enabled, hasGeolocation]);
 
   const handleSuccess = (position) => {
-    setLocation({
+    const nextLocation = {
       lat: position.coords.latitude,
       lng: position.coords.longitude,
-    });
+    };
+    setLocation(nextLocation);
     setError("");
     setPermissionState("granted");
+    try {
+      window.localStorage.setItem(LAST_LOCATION_KEY, JSON.stringify(nextLocation));
+    } catch {
+      // ignore storage errors
+    }
   };
 
   const handleError = (positionError) => {
@@ -102,9 +139,9 @@ export default function useUserLocation(enabled = true) {
         }
       },
       {
-        enableHighAccuracy: true,
-        timeout: 20000,
-        maximumAge: 0,
+        enableHighAccuracy: false,
+        timeout: 2500,
+        maximumAge: 900000,
       }
     );
   };
@@ -119,9 +156,9 @@ export default function useUserLocation(enabled = true) {
       watchIdRef.current = null;
     }
     const options = {
-      enableHighAccuracy: true,
-      timeout: 30000,
-      maximumAge: 0,
+      enableHighAccuracy: false,
+      timeout: 4000,
+      maximumAge: 600000,
     };
     watchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
@@ -146,8 +183,8 @@ export default function useUserLocation(enabled = true) {
             },
             {
               enableHighAccuracy: false,
-              timeout: 60000,
-              maximumAge: 60000,
+              timeout: 15000,
+              maximumAge: 300000,
             }
           );
         }

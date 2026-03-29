@@ -44,7 +44,7 @@ export function createApp() {
       <div class="card">
         <div class="pill">Backend online</div>
         <h1>Civic Intelligence API</h1>
-        <p>This server provides the backend for the civic platform. Open the frontend on <code>http://localhost:5173</code> and use the API below from the app or manually.</p>
+        <p>This server provides the backend for the civic platform. Open the frontend on <code>http://localhost:5174</code> and use the API below from the app or manually.</p>
         <ul>
           <li><code>GET /api/health</code></li>
           <li><code>GET /api/projects</code></li>

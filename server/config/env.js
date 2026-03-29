@@ -2,6 +2,10 @@ import dotenv from "dotenv";
 import { z } from "zod";
 
 dotenv.config();
+const hasExplicitMySqlConfig =
+  Boolean(process.env.MYSQL_HOST) &&
+  Boolean(process.env.MYSQL_USER) &&
+  Boolean(process.env.MYSQL_DATABASE);
 
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -29,5 +33,5 @@ export const env = {
   ...parsed,
   isProduction: parsed.NODE_ENV === "production",
   isDevelopment: parsed.NODE_ENV === "development",
-  hasDatabase: Boolean(parsed.MYSQL_HOST && parsed.MYSQL_USER && parsed.MYSQL_DATABASE),
+  hasDatabase: hasExplicitMySqlConfig,
 };

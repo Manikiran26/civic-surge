@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import MapCanvas from "./components/MapCanvas";
 import TopNav from "./components/TopNav";
 import FilterPanel from "./components/FilterPanel";
 import DashboardPanel from "./components/DashboardPanel";
-import ProjectInfoPanel from "./components/ProjectInfoPanel";
+import ProjectInfoPanelV2 from "./components/ProjectInfoPanelV2";
 import Project3DModal from "./components/Project3DModal";
 import { NotificationSystem } from "./components/NotificationSystem";
 import LoginPage from "./components/LoginPage";
@@ -30,8 +30,40 @@ const DEFAULT_FILTERS = {
   timelineStart: 2020,
   timelineEnd: 2032,
 };
+const USER_SESSION_KEY = "civic:user-session";
+
+function readStoredUser() {
+  if (typeof window === "undefined") {
+    return {
+      isLoggedIn: false,
+      name: "Guest",
+      role: "viewer",
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(USER_SESSION_KEY) || "null");
+    if (parsed?.isLoggedIn) {
+      return {
+        isLoggedIn: true,
+        name: parsed.name || "Citizen",
+        role: parsed.role || "viewer",
+        email: parsed.email || "",
+      };
+    }
+  } catch {
+    // ignore malformed stored session
+  }
+
+  return {
+    isLoggedIn: false,
+    name: "Guest",
+    role: "viewer",
+  };
+}
 
 export default function App() {
+  const initialUser = readStoredUser();
   const [projects, setProjects] = useState([]);
   const [status, setStatus] = useState({ loading: true, error: "" });
   const [selectedProjectId, setSelectedProjectId] = useState(null);
@@ -45,6 +77,7 @@ export default function App() {
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [dashboardSearch, setDashboardSearch] = useState("");
   const [dashboardSection, setDashboardSection] = useState(null);
+  const [projectPanelSection, setProjectPanelSection] = useState("overview");
   const [locationQuery, setLocationQuery] = useState("");
   const [locationResult, setLocationResult] = useState(null);
   const [locationSearchError, setLocationSearchError] = useState("");
@@ -56,18 +89,19 @@ export default function App() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [announcementFeed, setAnnouncementFeed] = useState([]);
+  const seenNotificationIdsRef = useRef(new Set());
+  const notificationTimersRef = useRef(new Map());
+  const [loginFocusToken, setLoginFocusToken] = useState(0);
+  const [pendingLoginFocus, setPendingLoginFocus] = useState(() => initialUser.isLoggedIn);
   const [geoPreferences, setGeoPreferences] = useState({
     speedMode: "walking",
     timeMode: "any",
     interestMode: "all",
   });
-  const [user, setUser] = useState({
-    isLoggedIn: false,
-    name: "Guest",
-    role: "viewer",
-  });
+  const [user, setUser] = useState(initialUser);
   const [adminState, setAdminState] = useState({ status: "idle", message: "" });
   const [show3D, setShow3D] = useState(false);
+  const [active3DProjectId, setActive3DProjectId] = useState(null);
   const {
     location,
     permissionState,
@@ -89,25 +123,105 @@ export default function App() {
     }));
   }, [projects]);
 
+  function queueNotification(notification, duration = 10000, limit = 4) {
+    if (!notification?.id || seenNotificationIdsRef.current.has(notification.id)) {
+      return false;
+    }
+
+    seenNotificationIdsRef.current.add(notification.id);
+    setNotifications((current) => [...current, notification].slice(-limit));
+
+    const existingTimer = notificationTimersRef.current.get(notification.id);
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+    }
+
+    const timer = window.setTimeout(() => {
+      setNotifications((current) => current.filter((item) => item.id !== notification.id));
+      notificationTimersRef.current.delete(notification.id);
+    }, duration);
+
+    notificationTimersRef.current.set(notification.id, timer);
+    return true;
+  }
+
+  useEffect(() => {
+    const timers = notificationTimersRef.current;
+    return () => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      timers.clear();
+    };
+  }, []);
+
   useEffect(() => {
     if (notificationsEnabled) return;
+    notificationTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    notificationTimersRef.current.clear();
+    seenNotificationIdsRef.current.clear();
     setNotifications([]);
   }, [notificationsEnabled]);
 
   useEffect(() => {
-    if (!user.isLoggedIn || !notificationsEnabled) return;
-    const id = `refresh-${Date.now()}`;
-    const notification = {
-      id,
-      type: "admin",
-      message: "Session started. Geo-fence alerts are active.",
-    };
-    setNotifications((current) => [...current, notification].slice(-4));
-    const timeout = window.setTimeout(() => {
-      setNotifications((current) => current.filter((item) => item.id !== id));
-    }, 6000);
-    return () => window.clearTimeout(timeout);
-  }, [user.isLoggedIn, notificationsEnabled]);
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (user.isLoggedIn) {
+      window.localStorage.setItem(
+        USER_SESSION_KEY,
+        JSON.stringify({
+          isLoggedIn: true,
+          name: user.name,
+          role: user.role,
+          email: user.email || "",
+        })
+      );
+      return;
+    }
+
+    window.localStorage.removeItem(USER_SESSION_KEY);
+  }, [user]);
+
+  useEffect(() => {
+    if (user.isLoggedIn) return;
+    notificationTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    notificationTimersRef.current.clear();
+    seenNotificationIdsRef.current.clear();
+    setNotifications([]);
+  }, [user.isLoggedIn]);
+
+  useEffect(() => {
+    if (!user.isLoggedIn || hasRequestedLocation || permissionState === "denied") return;
+
+    if (permissionState === "granted") {
+      startTracking();
+      return;
+    }
+
+    requestLocation();
+  }, [
+    hasRequestedLocation,
+    permissionState,
+    requestLocation,
+    startTracking,
+    user.isLoggedIn,
+  ]);
+
+  useEffect(() => {
+    if (!user.isLoggedIn || !location || isTracking || permissionState !== "granted") return;
+    startTracking();
+  }, [isTracking, location, permissionState, startTracking, user.isLoggedIn]);
+
+  useEffect(() => {
+    if (!user.isLoggedIn) {
+      setPendingLoginFocus(false);
+      return;
+    }
+    if (!pendingLoginFocus || !location || locationResult) return;
+
+    setLoginFocusToken((current) => current + 1);
+    setPendingLoginFocus(false);
+  }, [location, locationResult, pendingLoginFocus, user.isLoggedIn]);
 
   useEffect(() => {
     try {
@@ -119,7 +233,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!notificationsEnabled || !location || enrichedProjects.length === 0) return;
+    if (!user.isLoggedIn || !notificationsEnabled || !location || enrichedProjects.length === 0) return;
     if (!isTimeRelevant(geoPreferences.timeMode)) return;
 
     const speedFactor = speedMultiplier(geoPreferences.speedMode);
@@ -130,6 +244,8 @@ export default function App() {
       (project) =>
         Number.isFinite(project.latitude) &&
         Number.isFinite(project.longitude) &&
+        haversineKm(location.lat, location.lng, project.latitude, project.longitude) >
+          ((Number(project.geofenceRadiusM) || 1500) / 1000) &&
         (project.status === "ongoing" || project.status === "delayed") &&
         interestMatches(project)
     );
@@ -171,9 +287,7 @@ export default function App() {
 
     if (!nearestHospital || nearestHospital.distance > hospitalRadiusKm) return;
 
-    const storageKey = `civic:nearby:${nearestConstruction.project.id}:${nearestHospital.project.id}`;
-    if (window.sessionStorage.getItem(storageKey)) return;
-    window.sessionStorage.setItem(storageKey, "seen");
+    const notificationId = `civic:nearby:${nearestConstruction.project.id}:${nearestHospital.project.id}`;
 
     const message = `Construction nearby: ${nearestConstruction.project.name} (${formatDistanceKm(
       nearestConstruction.distance
@@ -181,18 +295,11 @@ export default function App() {
       nearestHospital.distance
     )}).`;
 
-    const notification = { id: storageKey, message, type: "geo" };
-    setNotifications((current) => [...current, notification].slice(-3));
-
-    const timer = window.setTimeout(() => {
-      setNotifications((current) => current.filter((item) => item.id !== storageKey));
-    }, 8000);
-
-    return () => window.clearTimeout(timer);
-  }, [location, enrichedProjects, notificationsEnabled, geoPreferences]);
+    queueNotification({ id: notificationId, message, type: "geo" }, 10000, 3);
+  }, [location, enrichedProjects, notificationsEnabled, geoPreferences, user.isLoggedIn]);
 
   useEffect(() => {
-    if (!notificationsEnabled || !location || enrichedProjects.length === 0) return;
+    if (!user.isLoggedIn || !notificationsEnabled || !location || enrichedProjects.length === 0) return;
     if (!isTimeRelevant(geoPreferences.timeMode)) return;
 
     const speedFactor = speedMultiplier(geoPreferences.speedMode);
@@ -207,90 +314,22 @@ export default function App() {
     );
 
     for (const project of hazardProjects) {
+      const geofenceRadiusKm = (Number(project.geofenceRadiusM) || 1500) / 1000;
       const distanceKm = haversineKm(
         location.lat,
         location.lng,
         project.latitude,
         project.longitude
       );
+      if (distanceKm <= geofenceRadiusKm) continue;
       if (distanceKm > alertRadiusKm) continue;
-      const storageKey = `civic:safety:${project.id}`;
-      if (window.sessionStorage.getItem(storageKey)) continue;
-      window.sessionStorage.setItem(storageKey, "seen");
+      const notificationId = `civic:safety:${project.id}`;
       const message = `Safety alert near ${project.name}: expect construction activity and diversions.`;
-      const notification = { id: storageKey, message, type: "safety" };
-      setNotifications((current) => [...current, notification].slice(-4));
-      const timer = window.setTimeout(() => {
-        setNotifications((current) => current.filter((item) => item.id !== storageKey));
-      }, 10000);
-      return () => window.clearTimeout(timer);
+      if (queueNotification({ id: notificationId, message, type: "safety" }, 10000, 4)) {
+        return;
+      }
     }
-  }, [location, enrichedProjects, notificationsEnabled, geoPreferences]);
-
-  useEffect(() => {
-    if (!notificationsEnabled || !location || enrichedProjects.length === 0) return;
-    const targetId = "bennett-university-mobility-hub";
-    const project = enrichedProjects.find((item) => item.id === targetId);
-    if (!project || !Number.isFinite(project.latitude) || !Number.isFinite(project.longitude)) return;
-    const distanceKm = haversineKm(
-      location.lat,
-      location.lng,
-      project.latitude,
-      project.longitude
-    );
-    if (distanceKm > 3) return;
-    const storageKey = `civic:geo:${targetId}`;
-    if (window.sessionStorage.getItem(storageKey)) return;
-    window.sessionStorage.setItem(storageKey, "seen");
-    const notification = {
-      id: storageKey,
-      type: "geo-detail",
-      title: "Geo-fence alert",
-      message: project.name,
-      locationLabel: project.locationLabel,
-      status: project.statusLabel || project.status,
-      distance: formatDistanceKm(distanceKm),
-      completion: project.completionPercent,
-      impact: project.impact?.timeSaved,
-      citizens: project.impact?.population,
-    };
-    setNotifications((current) => [...current, notification].slice(-3));
-    const timer = window.setTimeout(() => {
-      setNotifications((current) => current.filter((item) => item.id !== storageKey));
-    }, 3000);
-    return () => window.clearTimeout(timer);
-  }, [location, enrichedProjects, notificationsEnabled]);
-
-  useEffect(() => {
-    if (!notificationsEnabled || !location || enrichedProjects.length === 0) return;
-    if (!isTimeRelevant(geoPreferences.timeMode)) return;
-    const targetId = "bharat-mandapam-civic-hub";
-    const project = enrichedProjects.find((item) => item.id === targetId);
-    if (!project || !Number.isFinite(project.latitude) || !Number.isFinite(project.longitude)) return;
-    const distanceKm = haversineKm(
-      location.lat,
-      location.lng,
-      project.latitude,
-      project.longitude
-    );
-    const radius = 3 * speedMultiplier(geoPreferences.speedMode);
-    if (distanceKm > radius) return;
-    if (!interestMatches(project)) return;
-
-    const storageKey = `civic:geo:${targetId}`;
-    if (window.sessionStorage.getItem(storageKey)) return;
-    window.sessionStorage.setItem(storageKey, "seen");
-
-    const message = `Nearby alert: ${project.name} (${formatDistanceKm(distanceKm)} away) at Bharat Mandapam.`;
-    const notification = { id: storageKey, message, type: "geo" };
-    setNotifications((current) => [...current, notification].slice(-3));
-
-    const timer = window.setTimeout(() => {
-      setNotifications((current) => current.filter((item) => item.id !== storageKey));
-    }, 10000);
-
-    return () => window.clearTimeout(timer);
-  }, [location, enrichedProjects, notificationsEnabled, geoPreferences]);
+  }, [location, enrichedProjects, notificationsEnabled, geoPreferences, user.isLoggedIn]);
 
   useEffect(() => {
     let active = true;
@@ -393,13 +432,79 @@ export default function App() {
     enrichedProjects.find((project) => project.id === selectedProjectId) ||
     null;
 
+  const active3DProject =
+    enrichedProjects.find((project) => project.id === active3DProjectId) ||
+    selectedProject ||
+    null;
+
+  const nearbyGeoFenceProjects = useMemo(() => {
+    if (!location || enrichedProjects.length === 0) {
+      return [];
+    }
+
+    return enrichedProjects
+      .filter(
+        (project) =>
+          Number.isFinite(project.latitude) &&
+          Number.isFinite(project.longitude)
+      )
+      .map((project) => {
+        const distanceKm = haversineKm(
+          location.lat,
+          location.lng,
+          project.latitude,
+          project.longitude
+        );
+        const radiusKm = (Number(project.geofenceRadiusM) || 1500) / 1000;
+        return {
+          ...project,
+          distanceKm,
+          radiusKm,
+        };
+      })
+      .filter((project) => project.distanceKm <= project.radiusKm)
+      .sort((left, right) => left.distanceKm - right.distanceKm);
+  }, [location, enrichedProjects]);
+
+  const nearestLiveProject = useMemo(() => {
+    if (!location || enrichedProjects.length === 0) {
+      return null;
+    }
+
+    return (
+      enrichedProjects
+        .filter(
+          (project) =>
+            Number.isFinite(project.latitude) &&
+            Number.isFinite(project.longitude)
+        )
+        .map((project) => ({
+          ...project,
+          distanceKm: haversineKm(
+            location.lat,
+            location.lng,
+            project.latitude,
+            project.longitude
+          ),
+        }))
+        .sort((left, right) => left.distanceKm - right.distanceKm)[0] || null
+    );
+  }, [location, enrichedProjects]);
+
+  const activeGeoFenceProjectIds = useMemo(
+    () => nearbyGeoFenceProjects.map((project) => project.id),
+    [nearbyGeoFenceProjects]
+  );
+
   async function handleSelectProject(projectId) {
     if (!projectId) {
       setSelectedProjectId(null);
+      setProjectPanelSection("overview");
       return;
     }
 
     setSelectedProjectId(projectId);
+    setProjectPanelSection((current) => (current === "models" ? "models" : "overview"));
 
     try {
       const response = await getProjectById(projectId);
@@ -416,6 +521,31 @@ export default function App() {
 
   function handleFilterChange(patch) {
     setFilters((current) => ({ ...current, ...patch }));
+  }
+
+  function handleOpen3D(targetProjectId = selectedProjectId) {
+    if (!targetProjectId) return;
+    setActive3DProjectId(targetProjectId);
+    if (targetProjectId !== selectedProjectId) {
+      setSelectedProjectId(targetProjectId);
+    }
+    setShow3D(true);
+  }
+
+  function handleWorkspaceChange(section) {
+    if (!section) return;
+
+    const fallbackProjectId =
+      section === "models"
+        ? nearestLiveProject?.id || selectedProjectId || enrichedProjects[0]?.id || null
+        : selectedProjectId || nearestLiveProject?.id || enrichedProjects[0]?.id || null;
+    if (!fallbackProjectId) return;
+
+    if (fallbackProjectId !== selectedProjectId) {
+      setSelectedProjectId(fallbackProjectId);
+    }
+
+    setProjectPanelSection(section === "models" ? "models" : "intelligence");
   }
 
   async function handleLocationSearch(event, overrideQuery) {
@@ -496,23 +626,62 @@ export default function App() {
     return tags.includes(geoPreferences.interestMode);
   }
 
+  useEffect(() => {
+    if (!user.isLoggedIn || !notificationsEnabled || nearbyGeoFenceProjects.length === 0) return;
+    nearbyGeoFenceProjects.slice(0, 2).forEach((project) => {
+      const notificationId = `civic:geofence:${project.id}`;
+      queueNotification(
+        {
+          id: notificationId,
+          type: "geo-detail",
+          title: "Geo-fence alert",
+          message: project.name,
+          locationLabel: project.locationLabel,
+          status: project.statusLabel || project.status,
+          distance: formatDistanceKm(project.distanceKm),
+          completion: project.completionPercent,
+          impact: project.impact?.timeSaved,
+          citizens: project.impact?.population,
+        },
+        10000,
+        4
+      );
+    });
+  }, [nearbyGeoFenceProjects, notificationsEnabled, user.isLoggedIn]);
+
   function toggleBookmark(projectId) {
     setBookmarkedIds((current) =>
       current.includes(projectId) ? current.filter((id) => id !== projectId) : [projectId, ...current]
     );
   }
 
-  function handleLoginToggle() {
-    setUser((current) => {
-      if (current.isLoggedIn) {
-        return { isLoggedIn: false, name: "Guest", role: "viewer" };
-      }
-      return { isLoggedIn: true, name: "Aarav Mehta", role: "admin" };
-    });
+  function handleLogin(name, email) {
+    notificationTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    notificationTimersRef.current.clear();
+    seenNotificationIdsRef.current.clear();
+    setNotifications([]);
+    setMapCenter(null);
+    setMapZoom(null);
+    setPendingLoginFocus(true);
+    setUser({ isLoggedIn: true, name: name || "Citizen", role: "viewer", email: email || "" });
   }
 
-  function handleLogin(name, email) {
-    setUser({ isLoggedIn: true, name: name || "Citizen", role: "viewer", email: email || "" });
+  function handleLogout() {
+    notificationTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    notificationTimersRef.current.clear();
+    seenNotificationIdsRef.current.clear();
+    setNotifications([]);
+    setDashboardOpen(false);
+    setDashboardSection(null);
+    setProjectPanelSection("overview");
+    setSelectedProjectId(null);
+    setShow3D(false);
+    setActive3DProjectId(null);
+    setMapCenter(null);
+    setMapZoom(null);
+    setPendingLoginFocus(false);
+    stopTracking?.();
+    setUser({ isLoggedIn: false, name: "Guest", role: "viewer" });
   }
 
   async function handleAdminSubmit(event) {
@@ -558,11 +727,11 @@ export default function App() {
     } catch {
       // ignore
     }
-    const notification = { id: entry.id, message: `Admin update: ${entry.message}`, type: "admin" };
-    setNotifications((current) => [...current, notification].slice(-4));
-    window.setTimeout(() => {
-      setNotifications((current) => current.filter((item) => item.id !== entry.id));
-    }, 12000);
+    queueNotification(
+      { id: entry.id, message: `Admin update: ${entry.message}`, type: "admin" },
+      10000,
+      4
+    );
   }
 
   function handleAdminStatusUpdate(projectId, status) {
@@ -580,13 +749,23 @@ export default function App() {
 
   return (
     <div className="civic-app">
-      <TopNav onMenuClick={() => setDashboardOpen((current) => !current)} dashboardOpen={dashboardOpen} />
+      <TopNav
+        onMenuClick={() => setDashboardOpen((current) => !current)}
+        dashboardOpen={dashboardOpen}
+        activeWorkspace={projectPanelSection === "models" ? "models" : projectPanelSection === "intelligence" ? "intelligence" : null}
+        onWorkspaceChange={handleWorkspaceChange}
+      />
 
       <main className="civic-main">
         <MapCanvas
           mapMode={mapMode}
           mapModes={MAP_MODES}
           projects={filteredProjects}
+          geoFenceProjects={enrichedProjects.map((project) => ({
+            ...project,
+            activeGeoFence: activeGeoFenceProjectIds.includes(project.id),
+          }))}
+          loginFocusToken={loginFocusToken}
           userLocation={location}
           locationPermission={permissionState}
           onRequestLocation={requestLocation}
@@ -623,12 +802,22 @@ export default function App() {
         )}
 
         {user.isLoggedIn && (
-          <ProjectInfoPanel
+          <ProjectInfoPanelV2
+            key={`${selectedProjectId || "none"}:${projectPanelSection}`}
             project={selectedProject}
-            onClose={() => setSelectedProjectId(null)}
-            onOpen3D={() => setShow3D(true)}
-            onToggleBookmark={() => selectedProject && toggleBookmark(selectedProject.id)}
+            projects={enrichedProjects}
+            preferredLibraryProjectId={selectedProjectId ? null : nearestLiveProject?.id || null}
+            activeSection={projectPanelSection}
+            onSectionChange={setProjectPanelSection}
+            onSelectProject={handleSelectProject}
+            onClose={() => {
+              setSelectedProjectId(null);
+              setProjectPanelSection("overview");
+            }}
+            onOpen3D={handleOpen3D}
+            onToggleBookmark={(projectId) => projectId && toggleBookmark(projectId)}
             isBookmarked={selectedProject ? bookmarkedIds.includes(selectedProject.id) : false}
+            bookmarkedIds={bookmarkedIds}
           />
         )}
 
@@ -642,13 +831,22 @@ export default function App() {
           activeSection={dashboardSection}
           onSelectSection={setDashboardSection}
           user={user}
+          onLogout={handleLogout}
         />
       )}
 
       {user.isLoggedIn && <NotificationSystem notifications={notifications} />}
 
       {user.isLoggedIn && (
-        <Project3DModal open={show3D} project={selectedProject} onClose={() => setShow3D(false)} />
+        <Project3DModal
+          key={active3DProject?.id || "empty-3d"}
+          open={show3D}
+          project={active3DProject}
+          onClose={() => {
+            setShow3D(false);
+            setActive3DProjectId(null);
+          }}
+        />
       )}
     </div>
   );

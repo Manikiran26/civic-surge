@@ -34,24 +34,22 @@ export default function LoginPage({ onLogin }) {
   return (
     <div className="auth-shell">
       <div className="auth-left">
-        <div className="auth-map">
+        <div className="auth-map" aria-hidden="true">
+          <img
+            className="auth-map__image"
+            src="/download.png"
+            alt=""
+            loading="eager"
+            decoding="async"
+          />
+          <div className="auth-map__shine" />
           <div className="auth-map__overlay" />
-          <div className="auth-map__markers">
-            <span className="pin pin--a" />
-            <span className="pin pin--b" />
-            <span className="pin pin--c" />
-            <span className="route route--one" />
-            <span className="route route--two" />
-          </div>
-          <div className="auth-orbs">
-            <span className="orb orb--one" />
-            <span className="orb orb--two" />
-            <span className="orb orb--three" />
-          </div>
         </div>
         <div className="auth-left__content">
           <div className="auth-logo">
-            <span className="brand__mark" />
+            <span className="brand__mark">
+              <img src="/models/PHOTO-2026-03-28-00-40-54.jpg" alt="CivicSurge logo" />
+            </span>
             <div>
               <div className="auth-logo__name">CivicSurge</div>
               <div className="auth-logo__tag">Hyper-local intelligence platform</div>
@@ -97,6 +95,7 @@ export default function LoginPage({ onLogin }) {
               <input
                 type="email"
                 placeholder=" "
+                autoComplete="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 required
@@ -108,6 +107,7 @@ export default function LoginPage({ onLogin }) {
               <input
                 type="password"
                 placeholder=" "
+                autoComplete="current-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 required

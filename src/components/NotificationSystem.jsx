@@ -6,7 +6,7 @@ export function NotificationSystem({ notifications = [] }) {
   return (
     <div className="notification-stack fixed right-6 z-[9999] flex flex-col gap-3">
       {notifications.map((n, i) => (
-        <div key={i} className={`notification-card ${n.type || "geo"}`}>
+        <div key={n.id || i} className={`notification-card ${n.type || "geo"}`}>
           <Bell size={18} className="notification-icon" />
           <div>
             {n.title && <div className="notification-title">{n.title}</div>}

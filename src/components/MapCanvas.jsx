@@ -175,6 +175,7 @@ function buildGeoFenceFeatures(projects) {
             radius,
             shape,
             color: getGeoColor(project),
+            active: Boolean(project.activeGeoFence),
           },
           geometry: {
             type: "Polygon",
@@ -198,6 +199,8 @@ export default function MapCanvas({
   mapMode,
   mapModes = [],
   projects,
+  geoFenceProjects = projects,
+  loginFocusToken = 0,
   userLocation,
   locationPermission,
   onRequestLocation,
@@ -224,16 +227,18 @@ export default function MapCanvas({
   const centerRef = useRef(DEFAULT_CENTER);
   const zoomRef = useRef(4.4);
   const fallbackTimerRef = useRef(null);
+  const leafletFocusTimerRef = useRef(null);
+  const startupAnimationTimerRef = useRef(null);
   const errorCountRef = useRef(0);
   const leafletErrorCountRef = useRef(0);
   const hasCenteredOnUserRef = useRef(false);
+  const lastLoginFocusTokenRef = useRef(0);
   const [ready, setReady] = useState(false);
   const [provider, setProvider] = useState(() =>
     maplibregl.supported?.() ? "maplibre" : "leaflet"
   );
   const [tileOverride, setTileOverride] = useState(null);
   const [offlineTiles, setOfflineTiles] = useState(false);
-  const [isTilted, setIsTilted] = useState(mapMode !== "minimal");
   const [isLoading, setIsLoading] = useState(false);
   const [loadingLabel, setLoadingLabel] = useState("");
   const [showLoadingOverlay, setShowLoadingOverlay] = useState(false);
@@ -261,7 +266,6 @@ export default function MapCanvas({
   }, [mapCenter, mapZoom, provider, ready]);
 
   useEffect(() => {
-    setIsTilted(mapMode !== "minimal");
     setTileOverride(null);
     setOfflineTiles(false);
     leafletErrorCountRef.current = 0;
@@ -373,6 +377,8 @@ export default function MapCanvas({
 
     return () => {
       window.clearTimeout(fallbackTimerRef.current);
+      window.clearTimeout(leafletFocusTimerRef.current);
+      window.clearTimeout(startupAnimationTimerRef.current);
       window.clearTimeout(loadTimeout);
       window.clearTimeout(tileTimeout);
       window.clearTimeout(slowLoadTimer);
@@ -388,7 +394,7 @@ export default function MapCanvas({
       map.remove();
       mapRef.current = null;
     };
-  }, [provider]);
+  }, [provider, userLocation, mapMode]);
 
   useEffect(() => {
     if (provider !== "maplibre") return;
@@ -480,6 +486,8 @@ export default function MapCanvas({
     return () => {
       window.clearTimeout(sizeTimer);
       window.clearTimeout(tileLoadTimeout);
+      window.clearTimeout(leafletFocusTimerRef.current);
+      window.clearTimeout(startupAnimationTimerRef.current);
       resizeObserver.disconnect();
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current.clear();
@@ -494,7 +502,7 @@ export default function MapCanvas({
       map.remove();
       leafletMapRef.current = null;
     };
-  }, [provider]);
+  }, [provider, userLocation]);
 
   useEffect(() => {
     if (provider !== "leaflet") return;
@@ -593,7 +601,7 @@ export default function MapCanvas({
     if (provider === "maplibre") {
       const map = mapRef.current;
       if (!map) return;
-      const data = buildGeoFenceFeatures(projects);
+      const data = buildGeoFenceFeatures(geoFenceProjects);
       const existing = map.getSource?.("geofences");
       if (existing && existing.setData) {
         existing.setData(data);
@@ -608,8 +616,44 @@ export default function MapCanvas({
           source: "geofences",
           paint: {
             "fill-color": ["get", "color"],
-            "fill-opacity": 0.4,
+            "fill-antialias": true,
+            "fill-opacity": [
+              "case",
+              ["boolean", ["get", "active"], false],
+              0.3,
+              0.16,
+            ],
             "fill-outline-color": ["get", "color"],
+          },
+        });
+        map.addLayer({
+          id: "geofences-outline",
+          type: "line",
+          source: "geofences",
+          paint: {
+            "line-color": [
+              "case",
+              ["boolean", ["get", "active"], false],
+              "#f8fafc",
+              "rgba(255,255,255,0.42)",
+            ],
+            "line-width": [
+              "case",
+              ["boolean", ["get", "active"], false],
+              5.6,
+              3.2,
+            ],
+            "line-opacity": [
+              "case",
+              ["boolean", ["get", "active"], false],
+              0.62,
+              0.34,
+            ],
+            "line-blur": 0,
+          },
+          layout: {
+            "line-join": "round",
+            "line-cap": "round",
           },
         });
         map.addLayer({
@@ -618,7 +662,23 @@ export default function MapCanvas({
           source: "geofences",
           paint: {
             "line-color": ["get", "color"],
-            "line-width": 1.4,
+            "line-width": [
+              "case",
+              ["boolean", ["get", "active"], false],
+              3.4,
+              2.1,
+            ],
+            "line-opacity": [
+              "case",
+              ["boolean", ["get", "active"], false],
+              1,
+              0.92,
+            ],
+            "line-blur": 0,
+          },
+          layout: {
+            "line-join": "round",
+            "line-cap": "round",
           },
         });
       }
@@ -630,7 +690,7 @@ export default function MapCanvas({
       if (!map) return;
 
       const nextIds = new Set();
-      projects.forEach((project) => {
+      geoFenceProjects.forEach((project) => {
         if (!hasValidCoordinates(project)) return;
         const radius = getGeoRadiusMeters(project);
         const shape = getGeoShape(project);
@@ -653,9 +713,12 @@ export default function MapCanvas({
             : buildGeoFencePolygon(project.latitude, project.longitude, radius, shape, seed);
         const shapeLayer = L.polygon(points.map(([lng, lat]) => [lat, lng]), {
           color,
-          weight: 1.4,
+          className: project.activeGeoFence ? "geofence-shape is-active" : "geofence-shape",
+          weight: project.activeGeoFence ? 4 : 2.2,
           fillColor: color,
-          fillOpacity: 0.4,
+          opacity: project.activeGeoFence ? 1 : 0.92,
+          fillOpacity: project.activeGeoFence ? 0.3 : 0.16,
+          smoothFactor: 0,
         }).addTo(map);
         geoFenceRef.current.set(project.id, shapeLayer);
       });
@@ -667,7 +730,55 @@ export default function MapCanvas({
         }
       });
     }
-  }, [projects, provider, ready, mapMode]);
+  }, [geoFenceProjects, provider, ready, mapMode]);
+
+  useEffect(() => {
+    if (!ready || !userLocation || !loginFocusToken || lastLoginFocusTokenRef.current === loginFocusToken) {
+      return;
+    }
+
+    lastLoginFocusTokenRef.current = loginFocusToken;
+    hasCenteredOnUserRef.current = true;
+    centerRef.current = [userLocation.lat, userLocation.lng];
+    zoomRef.current = 13.6;
+
+    if (provider === "maplibre" && mapRef.current) {
+      mapRef.current.jumpTo({
+        center: [DEFAULT_CENTER[1], DEFAULT_CENTER[0]],
+        zoom: 4,
+        pitch: 0,
+        bearing: 0,
+      });
+      startupAnimationTimerRef.current = window.setTimeout(() => {
+        if (!mapRef.current) {
+          return;
+        }
+        mapRef.current.easeTo({
+          center: [userLocation.lng, userLocation.lat],
+          zoom: 13.6,
+          pitch: 0,
+          bearing: 0,
+          duration: 5600,
+          easing: (value) => value * value * (3 - 2 * value),
+          essential: true,
+        });
+      }, 360);
+      return;
+    }
+
+    if (provider === "leaflet" && leafletMapRef.current) {
+      leafletMapRef.current.setView(DEFAULT_CENTER, 4, { animate: false });
+      startupAnimationTimerRef.current = window.setTimeout(() => {
+        if (!leafletMapRef.current) {
+          return;
+        }
+        leafletMapRef.current.flyTo([userLocation.lat, userLocation.lng], 13.6, {
+          animate: true,
+          duration: 5.6,
+        });
+      }, 360);
+    }
+  }, [loginFocusToken, provider, ready, userLocation]);
 
   useEffect(() => {
     if (!selectedProjectId || !ready) return;
@@ -701,16 +812,6 @@ export default function MapCanvas({
         .setLngLat([userLocation.lng, userLocation.lat])
         .addTo(mapRef.current);
       userMarkerRef.current = marker;
-      if (!hasCenteredOnUserRef.current) {
-        mapRef.current.flyTo({
-          center: [userLocation.lng, userLocation.lat],
-          zoom: 12.8,
-          speed: 0.8,
-          curve: 1.2,
-          essential: true,
-        });
-        hasCenteredOnUserRef.current = true;
-      }
       return;
     }
 
@@ -720,10 +821,6 @@ export default function MapCanvas({
         icon: buildLeafletUserIcon(),
       }).addTo(leafletMapRef.current);
       userMarkerRef.current = marker;
-      if (!hasCenteredOnUserRef.current) {
-        leafletMapRef.current.setView([userLocation.lat, userLocation.lng], 12.8, { animate: true });
-        hasCenteredOnUserRef.current = true;
-      }
     }
   }, [userLocation, provider, ready]);
 
@@ -745,31 +842,24 @@ export default function MapCanvas({
   const handleLocateClick = () => {
     if (userLocation && ready) {
       if (provider === "maplibre" && mapRef.current) {
-        mapRef.current.flyTo({
+        mapRef.current.easeTo({
           center: [userLocation.lng, userLocation.lat],
-          zoom: 12.8,
-          speed: 0.8,
-          curve: 1.2,
+          zoom: 13.6,
+          duration: 900,
           essential: true,
         });
         return;
       }
       if (provider === "leaflet" && leafletMapRef.current) {
-        leafletMapRef.current.setView([userLocation.lat, userLocation.lng], 12.8, { animate: true });
+        leafletMapRef.current.flyTo([userLocation.lat, userLocation.lng], 13.6, {
+          animate: true,
+          duration: 0.9,
+        });
         return;
       }
     }
     onStartTracking?.();
     onRequestLocation?.();
-  };
-
-  const handleTilt = () => {
-    if (provider !== "maplibre") return;
-    const map = mapRef.current;
-    if (!map) return;
-    const nextPitch = map.getPitch() > 10 ? 0 : getInitialPitch(mapMode);
-    map.easeTo({ pitch: nextPitch, duration: 500 });
-    setIsTilted(nextPitch > 0);
   };
 
   return (
@@ -790,14 +880,6 @@ export default function MapCanvas({
         </div>
         <button type="button" className="map-locate" onClick={handleLocateClick} aria-label="Go to my location">
           <span className="map-locate__icon" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className={isTilted ? "map-tilt is-active" : "map-tilt"}
-          onClick={handleTilt}
-          disabled={provider !== "maplibre"}
-        >
-          Tilt
         </button>
       </div>
       <div className="map-shell__modes">
